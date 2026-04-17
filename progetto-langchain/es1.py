@@ -17,15 +17,17 @@ chat = AzureChatOpenAI(
     api_version=api_version,
     azure_endpoint=azure_endpoint,
     api_key=api_key,
+    temperature=0.4, # Imposta la creatività del modello (0.0 = preciso, 1.0+ = creativo)
 )
 
-#saluto iniziale del both
-saluto = chat.invoke([HumanMessage(content="Saluta l'utente in modo amichevole e chiedi come posso aiutarlo oggi.")])
-print("BOTH:", saluto.content + "\n")
+
 
 # Crea una conversazione con un messaggio umano
 def chat_loop():
     print("Digita 'exit' per uscire dalla chat.")
+    #saluto iniziale del both
+    saluto = chat.invoke([HumanMessage(content="Saluta l'utente in modo amichevole e chiedi come posso aiutarlo oggi.")])
+    print("BOTH:", saluto.content + "\n")
     while True:
         user_input = input("TU: ")
         if user_input.lower() == "exit":
