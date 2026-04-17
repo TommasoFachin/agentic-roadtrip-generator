@@ -1,0 +1,30 @@
+# ---- Python ----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+*.pkl
+
+# ---- Virtual environment ----
+venv/
+.env/
+.env.* 
+*.env
+
+# ---- IDE / Editor ----
+.vscode/
+.idea/
+
+# ---- Logs ----
+*.log
+
+# ---- Cache ----
+.cache/
+*.egg-info/
+dist/
+build/
+
+# ---- OS files ----
+.DS_Store
+Thumbs.db
