@@ -3,6 +3,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from dotenv import load_dotenv
 import os
 
+#in questo file il flusso è DIRETTO: Input Utente -> Modello -> risposta MOdello
+
 # Carica variabili da file .env
 load_dotenv()
 
