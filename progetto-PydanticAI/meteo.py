@@ -1,14 +1,15 @@
+#importazione ambiente e librerie necessarie
 import os
 import requests
 from dotenv import load_dotenv
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIResponsesModel
 
-# Carica .env
-load_dotenv()
+load_dotenv()   #legge il file .env e carica le variabili d'ambiente in os.environ
 
-model_name = os.getenv("OPENAI_MODEL")
+model_name = os.getenv("OPENAI_MODEL")   #legge il nome del modello dal file .env
 
+#controlla che la chiave API sia presente, altrimenti solleva un errore
 if not os.getenv("OPENAI_API_KEY"):
     raise ValueError("OPENAI_API_KEY non trovato nel .env")
 
@@ -19,7 +20,7 @@ llm = OpenAIResponsesModel(
 
 
 # FUNZIONE METEO (SENZA TOOL CALLING)
-
+#unzione get_weather che prende una stringa city e restituisce una stringa.
 def get_weather(city: str) -> str:
     city = city.strip()
 
@@ -42,6 +43,7 @@ def get_weather(city: str) -> str:
         "current_weather": True,
         "timezone": "auto"
     }
+    #meteo_resp è il json contenente le informazioni meteo attuali per la città specificata
     meteo_resp = requests.get(meteo_url, params=meteo_params).json()
 
     weather = meteo_resp["current_weather"]
