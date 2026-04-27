@@ -30,3 +30,6 @@ build/
 # ---- OS files ----
 .DS_Store
 Thumbs.db
+
+#file curl
+curl

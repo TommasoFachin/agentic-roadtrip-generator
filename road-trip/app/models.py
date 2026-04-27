@@ -4,21 +4,21 @@ from typing import List
 
 class TripPreferences(BaseModel):
     interessi: List[str]
-    distanza_max_giornaliera: float
+    distanza_massima_giornaliera: float
 
 class TripRequest(BaseModel):
     luogo_partenza: str
     luogo_destinazione: str
     data_partenza: date
     data_arrivo: date
-    prefernze: TripPreferences
+    preferenze: TripPreferences
 
 class Stop(BaseModel):
     nome: str
-    ora_arrivo: datetime
-    ora_partenza: datetime
-    POI: List[str]
-    distanza_tappa_precedente: float
+    ora_arrivo: datetime | None = None
+    ora_partenza: datetime | None = None
+    POI: List[str] | None = None
+    distanza_tappa_precedente: float | None = None
 
 class TripPlan(BaseModel):
     giorni_totali: int
