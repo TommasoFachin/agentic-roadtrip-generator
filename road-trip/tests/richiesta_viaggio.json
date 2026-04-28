@@ -1,11 +1,10 @@
 {
   "luogo_partenza": "Modena",
   "luogo_destinazione": "Amsterdam",
-  "data_partenza": "2025-06-01",
-  "data_arrivo": "2025-06-03",
+  "data_partenza": "2024-05-01",
+  "data_arrivo": "2024-05-05",
   "preferenze": {
-    "interessi": ["natura", "castelli"],
-    "distanza_massima_giornaliera": 200
+    "distanza_massima_giornaliera": 300,
+    "interessi": ["cibo", "natura", "città"]
   }
 }
-
