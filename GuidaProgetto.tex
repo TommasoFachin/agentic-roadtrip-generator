@@ -1,0 +1,93 @@
+\documentclass[12pt]{article}
+\usepackage[italian]{babel}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{setspace}
+
+\title{Documentazione del Road Trip Generator}
+\author{Tommaso Fachin}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\onehalfspacing
+
+\section{Introduzione}
+Questo documento descrive l'analisi, la progettazione e l'implementazione di un sistema di tipo \textbf{agentico} in grado di generare automaticamente un itinerario di viaggio (road trip) sulla base di specifiche fornite dall'utente.
+
+
+
+\section{Idea del Progetto}
+L'idea iniziale nasce dall'esigenza di creare un assistente in grado di automatizzare la pianificazione di un viaggio su strada.  
+
+\section{Obiettivi}
+L'obiettivo del progetto è realizzare un agente intelligente capace di:
+\begin{itemize}
+    \item interpretare richieste in linguaggio naturale;
+    \item estrarre informazioni rilevanti (città, preferenze, durata del viaggio, vincoli);
+    \item interrogare API esterne per ottenere dati reali;
+    \item generare un itinerario coerente, realistico e personalizzato.
+\end{itemize}
+
+\section {Specifiche dell' utente}
+L'utente fornisce alcune specifiche, come:
+\begin{itemize}
+    \item città di partenza e arrivo
+    \item durata del viaggio
+    \item eventuali preferenze di viaggio (veloce, itinerante)
+    \item nuemro massimo di ore di viaggio giornalire
+    \item eventuali tappe obbligatorie
+\end{itemize}
+
+\section{Risposta dell'agente}
+L'agente elabora queste informazioni e produce:
+\begin{itemize}
+    \item un percorso ottimizzato
+    \item una lista di tappe consigliate
+    \item punti di interesse lungo il tragitto
+    \item ristoranti, panorami o attrazioni rilevanti
+    \item tempi di percorrenza e distanze.
+\end{itemize}
+
+\section{Architettura del Sistema}
+L'architettura del sistema è composta da diversi moduli principali:
+\begin{itemize}
+    \item \textbf{Agente LLM}: responsabile dell'interpretazione delle richieste e della generazione dell'output.
+    \item \textbf{Modulo di "Routing"}: utilizza API di mappe per calcolare percorsi e distanze.
+    \item \textbf{Modulo Punti di interesse}: interroga servizi esterni per ottenere punti di interesse.
+    \item \textbf{Modulo Meteo}: opzionale, per integrare condizioni meteo lungo il percorso.
+    \item \textbf{Interfaccia Utente}: futura interfaccia web (opure CLI).
+\end{itemize}
+
+\section{Agenti e Linguaggi utilizzati}
+
+Il sistema utilizza un agente basato su modello LLM eseguito in locale tramite Ollama, utilizzando il modello \textbf{Mistral}.
+\newline
+Per la gestione dell'agente e delle sue capacità viene utilizzato il framework \textbf{PydanticAI}, che permette di definire in modo chiaro il comportamento dell'agente, le istruzioni operative e l'integrazione con funzioni esterne (API, moduli Python, ecc.).
+\newline
+Il progetto è sviluppato principalmente in \textbf{Python}.
+
+\section{API Utilizzate}
+DA SCRIVERE STRADA FACENDO
+
+
+\section{Funzionalità Previste}
+Il sistema dovrà essere in grado di:
+\begin{itemize}
+    \item generare un itinerario completo;
+    \item adattarsi alle preferenze dell'utente;
+    \item proporre alternative;
+    \item gestire errori e richieste ambigue;
+    \item fornire output sia testuale che strutturato (JSON).
+\end{itemize}
+
+\section{Conclusioni}
+
+Il progetto rappresenta un esempio concreto di utilizzo di agenti AI per automatizzare compiti complessi.  
+La documentazione verrà ampliata man mano che lo sviluppo procederà.
+
+\end{document}
