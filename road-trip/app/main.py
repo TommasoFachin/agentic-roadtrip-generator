@@ -14,15 +14,35 @@ app = FastAPI()
 @app.post("/genera-itinerario")
 def genera_itinerario(richiesta: TripRequest):
 
-    # Geocoding: città → coordinate
-    lon_start, lat_start = geocodifica_citta(richiesta.luogo_partenza)
-    lon_end, lat_end = geocodifica_citta(richiesta.luogo_destinazione)
+    # Geocoding: città → coordinate (con gestion errori)
+    coord_start = geocodifica_citta(richiesta.luogo_partenza)
+    coord_end = geocodifica_citta(richiesta.luogo_destinazione)
+
+    if coord_start is None:
+        return {
+            "errore": "Geocoding fallito",
+            "motivo": f"Impossibile trovare la città di partenza: {richiesta.luogo_partenza}"
+        }
+
+    if coord_end is None:
+        return {
+            "errore": "Geocoding fallito",
+            "motivo": f"Impossibile trovare la città di destinazione: {richiesta.luogo_destinazione}"
+        }
+
+    lon_start, lat_start = coord_start
+    lon_end, lat_end = coord_end
 
     # Routing: distanza reale + durata
     percorso = calcola_percorso(
         lon_start, lat_start,
         lon_end, lat_end
     )
+    if percorso is None or "distanza_km" not in percorso:
+        return {
+            "errore": "Routing fallito",
+            "motivo": "OpenRouteService non ha restituito un percorso valido."
+        }
 
     # STEP 3.1 — Calcolo tappe in base ai km/giorno
     distanza_massima = richiesta.preferenze.distanza_massima_giornaliera
@@ -33,7 +53,11 @@ def genera_itinerario(richiesta: TripRequest):
 
     # Calcolo giorni disponibili
     giorni_disponibili = (richiesta.data_arrivo - richiesta.data_partenza).days + 1
-
+    if giorni_disponibili <= 0:
+        return {
+            "errore": "Date non valide",
+            "motivo": "La data di arrivo deve essere uguale o successiva alla data di partenza."
+        }
     # STEP 3.2 — Verifica fattibilità del viaggio
     verifica = verifica_fattibilita_viaggio(
         required_days=tappe_info["required_days"],
