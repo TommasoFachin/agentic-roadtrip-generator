@@ -6,9 +6,9 @@ ORS_GEOCODING_URL = "https://api.openrouteservice.org/geocode/search"
 
 
 def geocodifica_citta(nome_citta: str) -> tuple[float, float]:
-    """
-    Restituisce (lon, lat) della città usando OpenRouteService.
-    """
+    
+    #Restituisce (lon, lat) della città usando OpenRouteService.
+    
 
     params = {
         "api_key": settings.ORS_API_KEY,
