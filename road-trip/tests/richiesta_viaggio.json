@@ -4,7 +4,7 @@
   "data_partenza": "2024-05-01",
   "data_arrivo": "2024-05-05",
   "preferenze": {
-    "distanza_massima_giornaliera": 100,
+    "distanza_massima_giornaliera": 400,
     "interessi": ["cibo", "natura", "città"]
   }
 }

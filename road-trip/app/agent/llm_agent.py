@@ -8,8 +8,7 @@ def suggerisci_poi(preferenze: TripPreferences, partenza: str, destinazione: str
     ]
 
 def genera_documento_finale(itinerario: TripPlan) -> str:
-    righe = [f"Itinerario di {itinerario.giorni_totali} giorni:"]
-    for tappa in itinerario.stops:
-        primo_poi = tappa.POI[0] if tappa.POI else "Nessun POI"
-        righe.append(f"- {tappa.nome}: {primo_poi}")
+    righe = [f"Itinerario di {len(itinerario.giorni)} giorni:"]
+    for giorno in itinerario.giorni:
+        righe.append(f"- Giorno {giorno.giorno} ({giorno.data}): {giorno.distanza_km} km, {giorno.durata_ore} ore")
     return "\n".join(righe)

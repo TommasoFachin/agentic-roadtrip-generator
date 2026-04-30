@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, date
-from app.models import TripPreferences, Stop, TripPlan
+from app.models import TripPreferences, Stop, TripPlan, DayPlan
 from fastapi import HTTPException
 import math
 
@@ -8,43 +8,50 @@ class ItineraryNotPossibleError(Exception):
     pass
 
 
-def costruisci_itinerario(dati_percorso: dict, preferenze: TripPreferences, giorni_disponibili: int) -> TripPlan:
-    distanza_totale = dati_percorso["distanza_km"]
-    distanza_massima = preferenze.distanza_massima_giornaliera
+def costruisci_itinerario(percorso: dict, preferenze, giorni_disponibili: int, data_partenza) -> TripPlan:
+    """
+    STEP 3.3 — Genera un itinerario giorno per giorno basato su:
+    - distanza totale del percorso
+    - durata totale del percorso
+    - giorni disponibili
+    - suddivisione realistica delle tappe
+    """
 
-    #CONTROLLO DI FATTIBILITÀ
-    distanza_massima_totale = distanza_massima * giorni_disponibili
+    distanza_totale = percorso["distanza_km"]
+    durata_totale_sec = percorso["durata_sec"]
 
-    if distanza_totale > distanza_massima_totale:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Impossibile generare l'itinerario: "
-                f"servirebbero almeno {distanza_totale / distanza_massima:.1f} giorni, "
-                f"ma l'utente ne ha solo {giorni_disponibili}."
-            )
+    # Suddivisione giornaliera
+    distanza_giornaliera = distanza_totale / giorni_disponibili
+    durata_giornaliera_sec = durata_totale_sec / giorni_disponibili
+
+    # Orario di partenza standard
+    ora_partenza = datetime.strptime("09:00", "%H:%M")
+
+    giorni = []
+
+    for i in range(giorni_disponibili):
+        # Data del giorno i-esimo
+        giorno_data = data_partenza + timedelta(days=i)
+
+        # Orario di arrivo stimato
+        ora_arrivo = ora_partenza + timedelta(seconds=durata_giornaliera_sec)
+
+        giorno = DayPlan(
+            giorno=i + 1,
+            data=giorno_data,
+            distanza_km=round(distanza_giornaliera, 2),
+            durata_ore=round(durata_giornaliera_sec / 3600, 2),
+            ora_partenza=ora_partenza.strftime("%H:%M"),
+            ora_arrivo=ora_arrivo.strftime("%H:%M"),
+            note="Tappa generata automaticamente in base alla distanza totale e ai giorni disponibili."
         )
 
-    # Se è fattibile, calcolo i giorni necessari (entro il limite)
-    giorni_necessari = int(distanza_totale // distanza_massima) + 1
-
-    tappe = []
-    ora_corrente = datetime.now()
-
-    for i in range(giorni_necessari):
-        tappa = Stop(
-            nome=f"Tappa {i+1}",
-            ora_arrivo=ora_corrente,
-            ora_partenza=ora_corrente + timedelta(hours=4),
-            POI=[f"POI esempio {i+1}"],
-            distanza_tappa_precedente=distanza_massima if i > 0 else 0.0
-        )
-        tappe.append(tappa)
-        ora_corrente += timedelta(days=1)
+        giorni.append(giorno)
 
     return TripPlan(
-        giorni_totali=giorni_necessari,
-        stops=tappe
+        distanza_totale_km=round(distanza_totale, 2),
+        durata_totale_ore=round(durata_totale_sec / 3600, 2),
+        giorni=giorni
     )
 
 def calcola_tappe(distanza_km: float, distanza_massima_giornaliera: int) -> dict:

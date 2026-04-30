@@ -53,7 +53,8 @@ def genera_itinerario(richiesta: TripRequest):
     itinerario: TripPlan = costruisci_itinerario(
         percorso,
         richiesta.preferenze,
-        giorni_disponibili
+        giorni_disponibili,
+        richiesta.data_partenza
     )
 
     # Generazione documento finale (LLM) — FUTURO

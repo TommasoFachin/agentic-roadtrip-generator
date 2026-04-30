@@ -20,6 +20,17 @@ class Stop(BaseModel):
     POI: List[str] | None = None
     distanza_tappa_precedente: float | None = None
 
+class DayPlan(BaseModel):
+    giorno: int
+    data: date
+    distanza_km: float
+    durata_ore: float
+    ora_partenza: str
+    ora_arrivo: str
+    note: str
+
 class TripPlan(BaseModel):
-    giorni_totali: int
-    stops: List[Stop]
+    distanza_totale_km: float
+    durata_totale_ore: float
+    giorni: List[DayPlan]
+
