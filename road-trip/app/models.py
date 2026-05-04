@@ -28,6 +28,10 @@ class DayPlan(BaseModel):
     ora_partenza: str
     ora_arrivo: str
     note: str
+    poi: list | None = None
+    citta_tappa: str | None = None
+
+    
 
 class TripPlan(BaseModel):
     distanza_totale_km: float

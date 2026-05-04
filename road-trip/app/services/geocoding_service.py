@@ -36,3 +36,36 @@ def geocodifica_citta(nome_citta: str) -> tuple[float, float]:
         )
 
     return lon, lat
+
+
+def reverse_geocoding(lat: float, lon: float) -> str:
+    """
+    Restituisce la città/paese più vicino usando Nominatim (OpenStreetMap).
+    """
+    url = "https://nominatim.openstreetmap.org/reverse"
+    params = {
+        "lat": lat,
+        "lon": lon,
+        "format": "json",
+        "zoom": 10,
+        "addressdetails": 1
+    }
+
+    try:
+        r = requests.get(url, params=params, headers={"User-Agent": "roadtrip-app"}, timeout=5)
+        if r.status_code != 200:
+            return "Località sconosciuta"
+
+        data = r.json()
+        addr = data.get("address", {})
+
+        return (
+            addr.get("city")
+            or addr.get("town")
+            or addr.get("village")
+            or addr.get("municipality")
+            or "Località sconosciuta"
+        )
+
+    except Exception:
+        return "Località sconosciuta"

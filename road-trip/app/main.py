@@ -77,7 +77,7 @@ def genera_itinerario(richiesta: TripRequest):
     itinerario: TripPlan = costruisci_itinerario(
         percorso,
         richiesta.preferenze,
-        giorni_disponibili,
+        distanza_massima,
         richiesta.data_partenza
     )
 
