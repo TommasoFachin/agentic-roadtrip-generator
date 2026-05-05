@@ -102,6 +102,59 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
 
     return tappe
 
+def punti_lungo_tappa(geometry, start_coord, end_coord, fractions=(1/3, 2/3, 1.0)):
+    """
+    Restituisce una lista di punti (lat, lon) lungo la tappa.
+    Usa la polyline per trovare i punti più vicini alle frazioni richieste.
+    """
+
+    # Trova gli indici nella polyline più vicini a start e end
+    def trova_indice_piu_vicino(lat, lon):
+        best_idx = 0
+        best_dist = float("inf")
+        for i, (lon2, lat2) in enumerate(geometry):
+            d = haversine_km(lat, lon, lat2, lon2)
+            if d < best_dist:
+                best_dist = d
+                best_idx = i
+        return best_idx
+
+    start_idx = trova_indice_piu_vicino(*start_coord)
+    end_idx = trova_indice_piu_vicino(*end_coord)
+
+    if start_idx > end_idx:
+        start_idx, end_idx = end_idx, start_idx
+
+    segment = geometry[start_idx:end_idx + 1]
+
+    # distanza cumulativa
+    cumulative = [0.0]
+    for i in range(1, len(segment)):
+        lon1, lat1 = segment[i - 1]
+        lon2, lat2 = segment[i]
+        d = haversine_km(lat1, lon1, lat2, lon2)
+        cumulative.append(cumulative[-1] + d)
+
+    total = cumulative[-1]
+    if total == 0:
+        lon, lat = segment[-1]
+        return [(lat, lon) for _ in fractions]
+
+    target_distances = [total * f for f in fractions]
+    points = []
+
+    for td in target_distances:
+        idx = 0
+        while idx < len(cumulative) and cumulative[idx] < td:
+            idx += 1
+        if idx >= len(segment):
+            lon, lat = segment[-1]
+        else:
+            lon, lat = segment[idx]
+        points.append((lat, lon))
+
+    return points
+
 
 def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornaliera: float, data_partenza: date) -> TripPlan:
     """
@@ -163,12 +216,29 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
         # Città/paese della tappa
         citta_tappa = reverse_geocoding(lat_end, lon_end)
 
-        # POI tra tappa attuale e successiva:
-        # usiamo il punto medio tra start e end della tappa
+        # POI lungo la tappa: 1/3, 2/3 e fine tappa
+        geometry = percorso["geometry"]
         lat_start, lon_start = tappa["start_coord"]
-        lat_mid = (lat_start + lat_end) / 2
-        lon_mid = (lon_start + lon_end) / 2
-        poi = cerca_poi(lat_mid, lon_mid, kinds=kinds_base, radius=8000, limit=10)
+
+        punti = punti_lungo_tappa(
+            geometry=geometry,
+            start_coord=(lat_start, lon_start),
+            end_coord=(lat_end, lon_end),
+            fractions=(1/3, 2/3, 1.0)
+        )
+
+        poi = []
+        for lat_p, lon_p in punti:
+            poi.extend(
+                cerca_poi(
+                    lat=lat_p,
+                    lon=lon_p,
+                    kinds=kinds_base,
+                    radius=6000,
+                    limit=5
+                )
+            )
+
 
         giorno = DayPlan(
             giorno=i + 1,
