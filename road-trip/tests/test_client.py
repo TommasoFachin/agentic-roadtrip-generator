@@ -13,4 +13,6 @@ response = requests.post(URL, json=payload)
 # Stampa il risultato
 print("STATUS:", response.status_code)
 print("RISPOSTA:")
+print(response.text)
+
 print(json.dumps(response.json(), indent=4, ensure_ascii=False))
