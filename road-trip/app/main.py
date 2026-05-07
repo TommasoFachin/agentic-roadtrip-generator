@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from app.models import TripRequest
 from app.agent.llm_agent import genera_documento_finale
-from app.services.geocoding_service import geocodifica_citta
+from app.services.geocoding_service import geocoding_citta
 from app.services.routing_service import calcola_percorso
 from fastapi.responses import StreamingResponse
 from app.services.pdf_service import genera_pdf_itinerario
@@ -19,8 +19,8 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
     e delle tappe, evitando duplicazioni tra gli endpoint JSON e PDF.
     """
     # Geocoding: città → coordinate
-    coord_start = geocodifica_citta(richiesta.luogo_partenza)
-    coord_end = geocodifica_citta(richiesta.luogo_destinazione)
+    coord_start = geocoding_citta(richiesta.luogo_partenza)
+    coord_end = geocoding_citta(richiesta.luogo_destinazione)
 
     lon_start, lat_start = coord_start
     lon_end, lat_end = coord_end

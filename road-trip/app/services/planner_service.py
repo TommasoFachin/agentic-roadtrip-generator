@@ -5,14 +5,14 @@ from app.services.poi_service import cerca_poi, mappa_interessi
 import math
 import requests
 from typing import List, Tuple
-from app.services.geocoding_service import reverse_geocoding
+from app.services.geocoding_service import reverse_geocoding, geocoding_citta
 
 
 class ItineraryNotPossibleError(Exception):
     """Eccezione sollevata quando l'itinerario non è fattibile con le specifiche fornite."""
     pass
 
-#formula matematica che calcola la distanza più corta tra due punti sulla superficie della Terra
+
 def haversine_km(lat1, lon1, lat2, lon2) -> float:
     """
     Distanza geodesica approssimata in km tra due punti.
@@ -102,6 +102,7 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
 
     return tappe
 
+
 def punti_lungo_tappa(geometry, start_coord, end_coord, fractions=(1/3, 2/3, 1.0)):
     """
     Restituisce una lista di punti (lat, lon) lungo la tappa.
@@ -162,7 +163,7 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
       - tappe reali lungo il percorso (distanza massima giornaliera)
       - orari realistici (pause, limite 20:00)
       - città/paese della tappa
-      - POI tra tappa attuale e successiva
+      - POI rilevanti lungo la tappa (ancorati a città reali)
     """
 
     distanza_totale = percorso["distanza_km"]
@@ -174,7 +175,7 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
     ora_partenza_standard = datetime.strptime("09:00", "%H:%M")
 
     giorni = []
-    tempo_extra = 0  # tempo che sfora e va aggiunto al giorno successivo
+    tempo_extra = 0
 
     kinds_base = mappa_interessi(preferenze.interessi)
 
@@ -190,14 +191,13 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
         # Durata base del giorno
         durata = durata_giornaliera_sec
 
-        # Pausa ogni 2 ore → 15 minuti
-        pause = int(durata // 7200) * 900  # 7200 sec = 2h, 900 sec = 15 min
+        pause = int(durata // 7200) * 900
 
         # Pausa pranzo se si supera mezzogiorno
         # Se l'arrivo previsto supera le ore 12:00, aggiunge 30 min di pausa pranzo
         arrivo_previsto = ora_partenza + timedelta(seconds=durata + pause)
         if arrivo_previsto.hour >= 12:
-            pause += 1800  # 30 min
+            pause += 1800
 
         # Calcolo arrivo
         ora_arrivo = ora_partenza + timedelta(seconds=durata + pause)
@@ -227,18 +227,39 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
             fractions=(1/3, 2/3, 1.0)
         )
 
-        poi = []
+        poi_dict = {}
+
         for lat_p, lon_p in punti:
-            poi.extend(
-                cerca_poi(
-                    lat=lat_p,
-                    lon=lon_p,
-                    kinds=kinds_base,
-                    radius=6000,
-                    limit=5
-                )
+
+            # 1) Reverse geocoding del punto lungo la tappa
+            citta_intermedia = reverse_geocoding(lat_p, lon_p)
+
+            # Se non trova una città → salta
+            if not citta_intermedia or citta_intermedia == "Località sconosciuta":
+                continue
+
+            # 2) Geocodifica del centro città (Nominatim)
+            try:
+                lon_c, lat_c = geocoding_citta(citta_intermedia)
+            except:
+                continue
+
+            # 3) Cerca POI popolari attorno alla città
+            risultati = cerca_poi(
+                lat=lat_c,   # ATTENZIONE: cerca_poi vuole (lat, lon)
+                lon=lon_c,
+                kinds=kinds_base,
+                radius=8000,
+                limit=20
             )
 
+            # 4) Deduplicazione
+            for p in risultati:
+                poi_dict[p["name"]] = p
+
+
+
+        poi = list(poi_dict.values())[:10]
 
         giorno = DayPlan(
             giorno=i + 1,

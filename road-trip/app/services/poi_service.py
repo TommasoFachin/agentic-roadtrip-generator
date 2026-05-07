@@ -1,15 +1,16 @@
 import requests
-import math
 import os
+import re
 
 OPENTRIPMAP_API_KEY = os.getenv("OPENTRIPMAP_API_KEY")
 BASE_URL = "https://api.opentripmap.com/0.1/en/places"
 
 
-def cerca_poi(lat, lon, radius=5000, kinds=None, limit=10):
+def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
     """
-    Cerca POI reali usando OpenTripMap.
-    kinds: lista di categorie (es. ["foods", "natural", "cultural"])
+    Cerca POI popolari usando OpenTripMap.
+    Usa rate=3 e orderby=popularity per ottenere POI famosi.
+    Filtra indirizzi e categorie inutili.
     """
     params = {
         "apikey": OPENTRIPMAP_API_KEY,
@@ -17,7 +18,9 @@ def cerca_poi(lat, lon, radius=5000, kinds=None, limit=10):
         "lon": lon,
         "lat": lat,
         "limit": limit,
-        "format": "json"
+        "format": "json",
+        "rate": "3",
+        "orderby": "popularity"
     }
 
     if kinds:
@@ -31,11 +34,24 @@ def cerca_poi(lat, lon, radius=5000, kinds=None, limit=10):
 
     data = response.json()
 
+    # Filtri intelligenti
+    address_pattern = re.compile(r'.*\s\d+')
+    blacklist = ["accomodations", "urban_environment", "historic_districts", "unclassified_objects"]
+
     poi_list = []
     for item in data:
+        name = item.get("name", "").strip()
+        kinds = item.get("kinds", "")
+
+        if not name or address_pattern.match(name):
+            continue
+
+        if any(b in kinds for b in blacklist):
+            continue
+
         poi_list.append({
-            "name": item.get("name", "Sconosciuto"),
-            "kind": item.get("kinds", ""),
+            "name": name,
+            "kind": kinds,
             "dist": item.get("dist", 0),
             "lat": item.get("point", {}).get("lat"),
             "lon": item.get("point", {}).get("lon")
@@ -51,9 +67,10 @@ def mappa_interessi(interessi):
     mapping = {
         "cibo": ["foods", "restaurants", "cafes"],
         "natura": ["natural", "parks", "view_points"],
-        "città": ["cultural", "architecture", "urban_environment"],
+        "città": ["cultural", "architecture"],
         "arte": ["museums", "theatres", "galleries"],
-        "storia": ["historic", "monuments"]
+        "musei": ["museums"],  # <--- AGGIUNTO
+        "storia": ["historic", "monuments", "museums", "fortifications"]
     }
 
     kinds = []

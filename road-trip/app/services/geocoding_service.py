@@ -1,46 +1,49 @@
 import requests
 from fastapi import HTTPException
-from app.config import settings
 
-ORS_GEOCODING_URL = "https://api.openrouteservice.org/geocode/search"
-
-
-def geocodifica_citta(nome_citta: str) -> tuple[float, float]:
-    
-    #Restituisce (lon, lat) della città usando OpenRouteService.
-    
-
+def geocoding_citta(nome_citta: str) -> tuple[float, float]:
+    """
+    Restituisce (lon, lat) del centro città usando Nominatim.
+    """
+    url = "https://nominatim.openstreetmap.org/search"
     params = {
-        "api_key": settings.ORS_API_KEY,
-        "text": nome_citta,
-        "size": 1
+        "q": nome_citta,
+        "format": "json",
+        "limit": 1
     }
 
-    response = requests.get(ORS_GEOCODING_URL, params=params)
-
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Errore ORS geocoding: {response.status_code} - {response.text}"
-        )
-
-    data = response.json()
+    # Nominatim richiede un User-Agent specifico. Se è troppo generico o usato da troppi utenti,
+    # il servizio risponde con 403 (Forbidden). Usane uno unico per il tuo progetto.
+    headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0"}
 
     try:
-        feature = data["features"][0]
-        lon, lat = feature["geometry"]["coordinates"]
-    except (KeyError, IndexError):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Impossibile trovare coordinate per: {nome_citta}"
-        )
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        
+        if r.status_code != 200:
+            # Stampiamo nel terminale il vero errore per capire se siamo bloccati
+            print(f"DEBUG GEOCoding: Nominatim ha risposto con {r.status_code} - {r.text}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Errore servizio geocoding (Status: {r.status_code})"
+            )
+            
+        data = r.json()
+        if not data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Impossibile trovare coordinate per: {nome_citta}"
+            )
 
-    return lon, lat
+        item = data[0]
+        return float(item["lon"]), float(item["lat"])
+    except requests.exceptions.RequestException as e:
+        print(f"DEBUG GEOCoding: Errore di rete: {e}")
+        raise HTTPException(status_code=503, detail="Servizio di geocodifica non raggiungibile")
 
 
 def reverse_geocoding(lat: float, lon: float) -> str:
     """
-    Restituisce la città/paese più vicino usando Nominatim (OpenStreetMap).
+    Restituisce la città/paese più vicino usando Nominatim.
     """
     url = "https://nominatim.openstreetmap.org/reverse"
     params = {
@@ -52,7 +55,8 @@ def reverse_geocoding(lat: float, lon: float) -> str:
     }
 
     try:
-        r = requests.get(url, params=params, headers={"User-Agent": "roadtrip-app"}, timeout=5)
+        headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0"}
+        r = requests.get(url, params=params, headers=headers, timeout=10)
         if r.status_code != 200:
             return "Località sconosciuta"
 
