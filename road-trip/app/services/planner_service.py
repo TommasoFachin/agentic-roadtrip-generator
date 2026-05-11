@@ -216,7 +216,8 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
         # Città/paese della tappa
         citta_tappa = reverse_geocoding(lat_end, lon_end)
 
-        # POI lungo la tappa: 1/3, 2/3 e fine tappa
+        # POI lungo la tappa: punto a metà (0.5) per ridurre il numero di richieste a Nominatim
+        
         geometry = percorso["geometry"]
         lat_start, lon_start = tappa["start_coord"]
 
@@ -224,42 +225,46 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
             geometry=geometry,
             start_coord=(lat_start, lon_start),
             end_coord=(lat_end, lon_end),
-            fractions=(1/3, 2/3, 1.0)
+            fractions=(0.5,)
         )
 
         poi_dict = {}
 
+        #POI lungo la tappa (punto intermedio)
         for lat_p, lon_p in punti:
-
-            # 1) Reverse geocoding del punto lungo la tappa
-            citta_intermedia = reverse_geocoding(lat_p, lon_p)
-
-            # Se non trova una città → salta
-            if not citta_intermedia or citta_intermedia == "Località sconosciuta":
-                continue
-
-            # 2) Geocodifica del centro città (Nominatim)
-            try:
-                lon_c, lat_c = geocoding_citta(citta_intermedia)
-            except:
-                continue
-
-            # 3) Cerca POI popolari attorno alla città
             risultati = cerca_poi(
-                lat=lat_c,   # ATTENZIONE: cerca_poi vuole (lat, lon)
-                lon=lon_c,
+                lat=lat_p,
+                lon=lon_p,
                 kinds=kinds_base,
                 radius=8000,
                 limit=20
             )
-
-            # 4) Deduplicazione
             for p in risultati:
                 poi_dict[p["name"]] = p
 
+        # POI della città finale della tappa
+        if citta_tappa and citta_tappa != "Località sconosciuta":
+            try:
+                lon_f, lat_f = geocoding_citta(citta_tappa)
+                risultati_finale = cerca_poi(
+                    lat=lat_f,
+                    lon=lon_f,
+                    kinds=kinds_base,
+                    radius=8000,
+                    limit=20
+                )
+                for p in risultati_finale:
+                    poi_dict[p["name"]] = p
+            except:
+                pass
 
+        # Ordina per popolarità
+        poi_ordinati = sorted(
+            poi_dict.values(),
+            key=lambda x: (-x.get("popularity", 0), x.get("dist", 999999))
+        )
 
-        poi = list(poi_dict.values())[:10]
+        poi = poi_ordinati[:3]
 
         giorno = DayPlan(
             giorno=i + 1,
@@ -270,7 +275,6 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
             ora_arrivo=ora_arrivo.strftime("%H:%M"),
             note="Orari realistici con pause e limite massimo alle 20:00.",
             poi=poi,
-            # se nel tuo modello non c'è ancora questo campo, aggiungilo in app.models.DayPlan
             citta_tappa=citta_tappa
         )
 

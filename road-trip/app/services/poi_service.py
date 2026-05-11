@@ -24,12 +24,13 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
     }
 
     if kinds:
-        params["kinds"] = ",".join(kinds)
+        params["kinds"] = ",".join(set(kinds))
 
     url = f"{BASE_URL}/radius"
     response = requests.get(url, params=params)
 
     if response.status_code != 200:
+        print(f"Errore OpenTripMap API ({response.status_code}): {response.text}")
         return []
 
     data = response.json()
@@ -65,12 +66,12 @@ def mappa_interessi(interessi):
     Mappa gli interessi dell’utente alle categorie OpenTripMap.
     """
     mapping = {
-        "cibo": ["foods", "restaurants", "cafes"],
-        "natura": ["natural", "parks", "view_points"],
+        "cibo": ["foods"],
+        "natura": ["natural"],
         "città": ["cultural", "architecture"],
-        "arte": ["museums", "theatres", "galleries"],
-        "musei": ["museums"],  # <--- AGGIUNTO
-        "storia": ["historic", "monuments", "museums", "fortifications"]
+        "arte": ["museums", "cultural"],
+        "musei": ["museums"],  
+        "storia": ["historic"]
     }
 
     kinds = []
@@ -78,4 +79,4 @@ def mappa_interessi(interessi):
         if interesse in mapping:
             kinds.extend(mapping[interesse])
 
-    return kinds
+    return list(set(kinds))

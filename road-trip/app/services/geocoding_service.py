@@ -1,75 +1,89 @@
 import requests
 from fastapi import HTTPException
+import time
+from functools import lru_cache
 
+@lru_cache(maxsize=128)
 def geocoding_citta(nome_citta: str) -> tuple[float, float]:
     """
-    Restituisce (lon, lat) del centro città usando Nominatim.
+    Restituisce (lon, lat) del centro città usando l'API gratuita Photon (Komoot).
+    Sostituisce Nominatim per evitare i severi blocchi 429.
     """
-    url = "https://nominatim.openstreetmap.org/search"
+    url = "https://photon.komoot.io/api/"
     params = {
         "q": nome_citta,
-        "format": "json",
         "limit": 1
     }
 
-    # Nominatim richiede un User-Agent specifico. Se è troppo generico o usato da troppi utenti,
-    # il servizio risponde con 403 (Forbidden). Usane uno unico per il tuo progetto.
     headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0"}
 
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        
-        if r.status_code != 200:
-            # Stampiamo nel terminale il vero errore per capire se siamo bloccati
-            print(f"DEBUG GEOCoding: Nominatim ha risposto con {r.status_code} - {r.text}")
-            raise HTTPException(
-                status_code=502,
-                detail=f"Errore servizio geocoding (Status: {r.status_code})"
-            )
+    for attempt in range(3):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=10)
             
-        data = r.json()
-        if not data:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Impossibile trovare coordinate per: {nome_citta}"
-            )
+            if r.status_code != 200:
+                print(f"DEBUG GEOCoding: Photon ha risposto con {r.status_code} - {r.text}")
+                time.sleep(2.0)
+                continue
+                
+            data = r.json()
+            features = data.get("features", [])
+            if not features:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Impossibile trovare coordinate per: {nome_citta}"
+                )
 
-        item = data[0]
-        return float(item["lon"]), float(item["lat"])
-    except requests.exceptions.RequestException as e:
-        print(f"DEBUG GEOCoding: Errore di rete: {e}")
-        raise HTTPException(status_code=503, detail="Servizio di geocodifica non raggiungibile")
+            coords = features[0]["geometry"]["coordinates"]
+            # Photon restituisce [lon, lat]
+            return float(coords[0]), float(coords[1])
+            
+        except requests.exceptions.RequestException as e:
+            print(f"DEBUG GEOCoding: Errore di rete: {e}")
+            if attempt == 2:
+                raise HTTPException(status_code=503, detail="Servizio di geocodifica non raggiungibile")
+            time.sleep(2.0)
 
+    raise HTTPException(status_code=502, detail="Errore servizio geocoding (Photon API)")
 
+@lru_cache(maxsize=1024)
 def reverse_geocoding(lat: float, lon: float) -> str:
     """
-    Restituisce la città/paese più vicino usando Nominatim.
+    Restituisce la città/paese più vicino usando l'API gratuita Photon (Komoot).
     """
-    url = "https://nominatim.openstreetmap.org/reverse"
+    url = "https://photon.komoot.io/reverse"
     params = {
-        "lat": lat,
-        "lon": lon,
-        "format": "json",
-        "zoom": 10,
-        "addressdetails": 1
+        "lat": round(lat, 3),
+        "lon": round(lon, 3)
     }
+    headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0"}
 
-    try:
-        headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0"}
-        r = requests.get(url, params=params, headers=headers, timeout=10)
-        if r.status_code != 200:
-            return "Località sconosciuta"
+    for attempt in range(3):
+        try:
+            r = requests.get(url, params=params, headers=headers, timeout=10)
+            
+            if r.status_code != 200:
+                time.sleep(2.0)
+                continue
 
-        data = r.json()
-        addr = data.get("address", {})
+            data = r.json()
+            features = data.get("features", [])
+            if not features:
+                return "Località sconosciuta"
 
-        return (
-            addr.get("city")
-            or addr.get("town")
-            or addr.get("village")
-            or addr.get("municipality")
-            or "Località sconosciuta"
-        )
+            props = features[0]["properties"]
 
-    except Exception:
-        return "Località sconosciuta"
+            return (
+                props.get("city")
+                or props.get("town")
+                or props.get("village")
+                or props.get("name")
+                or "Località sconosciuta"
+            )
+
+        except Exception:
+            if attempt == 2:
+                return "Località sconosciuta"
+            time.sleep(2.0)
+            
+    return "Località sconosciuta"

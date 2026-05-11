@@ -24,6 +24,12 @@ def genera_pdf_itinerario(itinerario, documento_testuale):
     c.setFont("Helvetica", 11)
 
     for giorno in itinerario.giorni:
+        # Controllo per assicurarci di avere spazio a sufficienza per iniziare un nuovo giorno senza tagliarlo
+        # Alzato a 250 per garantire che l'intestazione e l'inizio dei POI abbiano sempre spazio
+        if y < 250:
+            c.showPage()
+            y = 800
+
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, y, f"Giorno {giorno.giorno} – {giorno.data}")
         y -= 20
