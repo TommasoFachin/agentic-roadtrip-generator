@@ -1,14 +1,37 @@
-from app.models import TripPreferences, TripPlan
+import json
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.ollama import OllamaProvider
+from app.models import TripRequest
 
-def suggerisci_poi(preferenze: TripPreferences, partenza: str, destinazione: str):
-    return [
-        "Castello di esempio",
-        "Parco naturale di esempio",
-        "Centro storico di esempio"
-    ]
+PROMPT = """
+Sei un assistente che interpreta richieste di viaggio.
+Rispondi SOLO con un JSON valido.
+Non aggiungere testo prima o dopo.
+"""
 
-def genera_documento_finale(itinerario: TripPlan) -> str:
-    righe = [f"Itinerario di {len(itinerario.giorni)} giorni:"]
-    for giorno in itinerario.giorni:
-        righe.append(f"- Giorno {giorno.giorno} ({giorno.data}): {giorno.distanza_km} km, {giorno.durata_ore} ore")
-    return "\n".join(righe)
+model = OpenAIChatModel(
+    model_name="mistral",
+    provider=OllamaProvider(base_url="http://localhost:11434/v1"),
+)
+
+llm_agent = Agent(
+    model=model,
+    instructions=PROMPT
+)
+
+async def interpreta_richiesta(testo: str) -> TripRequest:
+    # 1) Chiamata all’LLM
+    result = await llm_agent.run(testo)
+
+    # 2) La tua versione usa SOLO str(result)
+    raw_text = str(result)
+
+    print("\n=== RISPOSTA RAW LLM ===")
+    print(raw_text)
+
+    # 3) Parsing JSON
+    data = json.loads(raw_text)
+
+    # 4) Validazione Pydantic
+    return TripRequest(**data)

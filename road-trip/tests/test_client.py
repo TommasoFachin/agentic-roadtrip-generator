@@ -1,18 +1,37 @@
 import requests
 import json
 
-URL = "http://127.0.0.1:8000/genera-itinerario"
+# 1) Endpoint LLM
+URL_LLM = "http://127.0.0.1:8000/interpreta-richiesta"
 
-# Carica il JSON della richiesta
-with open("richiesta_viaggio.json", "r", encoding="utf-8") as f:
-    payload = json.load(f)
+# 2) Endpoint planner
+URL_PLANNER = "http://127.0.0.1:8000/genera-itinerario"
 
-# Invia la richiesta POST
-response = requests.post(URL, json=payload)
+# --- STEP 1: Testo naturale → JSON tramite LLM ---
+testo = {
+    "testo": "Vorrei un viaggio da Modena ad Amsterdam dal 1 al 5 maggio, massimo 400 km al giorno, interessato a arte e natura."
+}
 
-# Stampa il risultato
-print("STATUS:", response.status_code)
+print("\n=== STEP 1: Chiamata all'LLM ===")
+response_llm = requests.post(URL_LLM, json=testo)
+
+print("STATUS:", response_llm.status_code)
+print("JSON generato dall'LLM:")
+print(json.dumps(response_llm.json(), indent=4, ensure_ascii=False))
+
+# Salvo il JSON generato
+json_viaggio = response_llm.json()
+
+# --- STEP 2: JSON → Planner (/genera-itinerario) ---
+print("\n=== STEP 2: Chiamata al planner ===")
+response_planner = requests.post(URL_PLANNER, json=json_viaggio)
+
+print("STATUS:", response_planner.status_code)
 print("RISPOSTA:")
-print(response.text)
+print(response_planner.text)
 
-print(json.dumps(response.json(), indent=4, ensure_ascii=False))
+# Se la risposta è JSON, lo stampo formattato
+try:
+    print(json.dumps(response_planner.json(), indent=4, ensure_ascii=False))
+except:
+    pass

@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from app.models import TripRequest
-from app.agent.llm_agent import genera_documento_finale
-from app.services.geocoding_service import geocoding_citta
+from pydantic import BaseModel
+from app.agent.llm_agent import interpreta_richiesta
+from app.services.geocoding_service import geocoding_citta, reverse_geocoding
 from app.services.routing_service import calcola_percorso
 from fastapi.responses import StreamingResponse
 from app.services.pdf_service import genera_pdf_itinerario
@@ -11,14 +12,17 @@ from app.services.planner_service import (
     verifica_fattibilita_viaggio
 )
 
+class InterpretationRequest(BaseModel):
+    testo: str
+
 app = FastAPI()
 
+@app.post("/interpreta-richiesta")
+async def interpreta(payload: InterpretationRequest):
+    return await interpreta_richiesta(payload.testo)
+
 def _prepara_dati_viaggio(richiesta: TripRequest):
-    """
-    Funzione di utility per centralizzare la logica di calcolo del percorso 
-    e delle tappe, evitando duplicazioni tra gli endpoint JSON e PDF.
-    """
-    # Geocoding: città → coordinate
+
     coord_start = geocoding_citta(richiesta.luogo_partenza)
     coord_end = geocoding_citta(richiesta.luogo_destinazione)
 
@@ -60,7 +64,6 @@ def genera_itinerario(richiesta: TripRequest):
             "errore": "Viaggio non fattibile",
             "dettagli": verifica,
             "tappe_info": tappe_info,
-            
         }
 
     itinerario = costruisci_itinerario(
@@ -70,8 +73,7 @@ def genera_itinerario(richiesta: TripRequest):
         richiesta.data_partenza
     )
 
-    # Generazione documento finale (LLM) — FUTURO
-    documento = genera_documento_finale(itinerario)
+    documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
 
     # --- GENERAZIONE E SALVATAGGIO PDF LOCALE ---
     # Questo salva il file nella cartella del progetto ogni volta che chiami l'API
@@ -79,7 +81,12 @@ def genera_itinerario(richiesta: TripRequest):
     with open("itinerario_generato.pdf", "wb") as f:
         f.write(pdf_buffer.getvalue())
 
-    return {"tappe_info": tappe_info, "verifica": verifica, "itinerario": itinerario, "documento": documento}
+    return {
+        "tappe_info": tappe_info,
+        "verifica": verifica,
+        "itinerario": itinerario,
+        "documento": documento
+    }
 
 @app.post("/genera-itinerario-pdf")
 def genera_itinerario_pdf(richiesta: TripRequest):
@@ -95,10 +102,9 @@ def genera_itinerario_pdf(richiesta: TripRequest):
         richiesta.data_partenza
     )
 
-    # 2. Genera documento testuale (ora semplice, poi con LLM)
-    documento = genera_documento_finale(itinerario)
+    documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
 
-    # 3. Genera PDF
+    # --- GENERAZIONE PDF ---
     pdf_buffer = genera_pdf_itinerario(itinerario, documento)
 
     return StreamingResponse(
