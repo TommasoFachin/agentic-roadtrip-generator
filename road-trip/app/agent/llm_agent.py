@@ -17,7 +17,7 @@ Devi restituire ESCLUSIVAMENTE un JSON valido che rispetta ESATTAMENTE questo sc
   "data_arrivo": "YYYY-MM-DD",
   "preferenze": {
     "distanza_massima_giornaliera": 0,
-    "interessi": ["string", "string"]
+    "interessi": ["string", "string"....ecc]
   }
 }
 
