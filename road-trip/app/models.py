@@ -38,3 +38,8 @@ class TripPlan(BaseModel):
     durata_totale_ore: float
     giorni: List[DayPlan]
 
+class UserProfile(BaseModel):
+    interessi: list[str] = []
+    preferenze_viaggio: list[str] = []
+    preferenze_cibo: list[str] = []
+    tappe_obbligatorie: list[str] = []

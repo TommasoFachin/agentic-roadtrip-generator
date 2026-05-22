@@ -1,3 +1,6 @@
+#questo file è il cervello matematico e logico del programma.
+
+
 from datetime import datetime, timedelta, date
 from app.models import TripPreferences, Stop, TripPlan, DayPlan
 from fastapi import HTTPException
@@ -6,13 +9,15 @@ import math
 import requests
 from typing import List, Tuple
 from app.services.geocoding_service import reverse_geocoding, geocoding_citta
+from app.services.user_profile_service import get_user_profile
+from app.agent.llm_agent import seleziona_poi_con_llm
 
 
 class ItineraryNotPossibleError(Exception):
     """Eccezione sollevata quando l'itinerario non è fattibile con le specifiche fornite."""
     pass
 
-
+#funzione per calcolare la distanza geodesica tra 2 cordinate
 def haversine_km(lat1, lon1, lat2, lon2) -> float:
     """
     Distanza geodesica approssimata in km tra due punti.
@@ -26,7 +31,7 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
     c = 2 * asin(sqrt(a))
     return R * c
 
-
+#funzione che divide il viaggio in tappe reali basate sulla distanza massima giornaliera, e costruisce un itinerario giorno per giorno con orari realistici, città di tappa e POI rilevanti lungo la tappa.
 def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) -> List[dict]:
     """
     Divide il percorso reale (geometry) in tappe basate sulla distanza massima giornaliera.
@@ -102,7 +107,7 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
 
     return tappe
 
-
+# funzione che, dato un percorso con geometria, estrae punti a frazioni specifiche del percorso (es. 1/3, 2/3) per cercare POI lungo la tappa in modo più distribuito e realistico.
 def punti_lungo_tappa(geometry, start_coord, end_coord, fractions=(1/3, 2/3, 1.0)):
     """
     Restituisce una lista di punti (lat, lon) lungo la tappa.
@@ -156,8 +161,8 @@ def punti_lungo_tappa(geometry, start_coord, end_coord, fractions=(1/3, 2/3, 1.0
 
     return points
 
-
-def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornaliera: float, data_partenza: date) -> TripPlan:
+# funzione principale che costruisce l'itinerario giorno per giorno, con orari realistici, città di tappa e POI rilevanti lungo la tappa.
+async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornaliera: float, data_partenza: date) -> TripPlan:
     """
     Genera un itinerario giorno per giorno basato su:
       - tappe reali lungo il percorso (distanza massima giornaliera)
@@ -165,6 +170,7 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
       - città/paese della tappa
       - POI rilevanti lungo la tappa (ancorati a città reali)
     """
+    profilo = get_user_profile()
 
     distanza_totale = percorso["distanza_km"]
     durata_totale_sec = percorso["durata_sec"]
@@ -264,7 +270,8 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
             key=lambda x: (-x.get("popularity", 0), x.get("dist", 999999))
         )
 
-        poi = poi_ordinati[:3]
+        # --- SELEZIONE INTELLIGENTE DEI POI TRAMITE LLM ---
+        poi = await seleziona_poi_con_llm(poi_ordinati, profilo.dict())
 
         giorno = DayPlan(
             giorno=i + 1,
@@ -286,7 +293,7 @@ def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornalie
         giorni=giorni
     )
 
-
+#funzione che, dato la distanza totale e la distanza massima giornaliera, calcola il numero di giorni necessari per completare il viaggio, e verifica se è fattibile con i giorni disponibili.
 def calcola_tappe(distanza_km: float, distanza_massima_giornaliera: int) -> dict:
     if distanza_km <= 0:
         return {"error": "Distanza non valida", "required_days": 0}
@@ -302,7 +309,7 @@ def calcola_tappe(distanza_km: float, distanza_massima_giornaliera: int) -> dict
         "required_days": required_days
     }
 
-
+# funzione che, dato il numero di giorni richiesti e i giorni disponibili, verifica se il viaggio è fattibile e restituisce un messaggio esplicativo.
 def verifica_fattibilita_viaggio(required_days: int, giorni_disponibili: int) -> dict:
     if required_days <= giorni_disponibili:
         return {

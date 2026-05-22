@@ -1,3 +1,6 @@
+# questo file si occupa di interfacciarsi con l’API di OpenTripMap per cercare POI popolari lungo il percorso,
+# filtrando quelli meno rilevanti e mappando gli interessi dell’utente alle categorie di OpenTripMap.
+
 import requests
 import os
 import re
@@ -5,7 +8,9 @@ import re
 OPENTRIPMAP_API_KEY = os.getenv("OPENTRIPMAP_API_KEY")
 BASE_URL = "https://api.opentripmap.com/0.1/en/places"
 
-
+# funzione che, dato latitudine, longitudine e raggio, cerca POI popolari usando OpenTripMap,
+#  filtrando quelli meno rilevanti e restituendo una lista di POI con nome, categoria, distanza
+#  e coordinate.
 def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
     """
     Cerca POI popolari usando OpenTripMap.
@@ -27,6 +32,7 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
         params["kinds"] = ",".join(set(kinds))
 
     url = f"{BASE_URL}/radius"
+    #chiamata HTTP GET a OpenTripMap API
     response = requests.get(url, params=params)
 
     if response.status_code != 200:
@@ -50,6 +56,7 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
         if any(b in kinds for b in blacklist):
             continue
 
+        #costruzione lista POI da restituire
         poi_list.append({
             "name": name,
             "kind": kinds,
@@ -60,7 +67,8 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
 
     return poi_list
 
-
+# funzione che mappa gli interessi dell’utente alle categorie di OpenTripMap, 
+# restituendo una lista di categorie da usare nella ricerca dei POI.
 def mappa_interessi(interessi):
     """
     Mappa gli interessi dell’utente alle categorie OpenTripMap.

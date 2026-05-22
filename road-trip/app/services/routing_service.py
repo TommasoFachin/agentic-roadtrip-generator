@@ -1,3 +1,6 @@
+# questo file si occupa di interfacciarsi con l’API di OpenRouteService per calcolare
+# il percorso reale tra due coordinate, restituendo distanza, durata e geometria del percorso.
+
 import requests
 from fastapi import HTTPException
 from app.config import settings
@@ -8,6 +11,7 @@ ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car
 def calcola_percorso(start_lon: float, start_lat: float, end_lon: float, end_lat: float) -> dict:
     print(">>> calcola_percorso <<<")
 
+    # ORS richiede [lon, lat] e restituisce geometria in quel formato
     headers = {
         "Authorization": settings.ORS_API_KEY,
         "Content-Type": "application/json"
@@ -22,13 +26,14 @@ def calcola_percorso(start_lon: float, start_lat: float, end_lon: float, end_lat
         "geometry": True 
     }
 
+    #chiamata HTTP POST a ORS
     response = requests.post(ORS_DIRECTIONS_URL, json=body, headers=headers)
 
     print("STATUS ORS:", response.status_code)
     print("TESTO ORS:", response.text[:500])
 
     try:
-        data = response.json()
+        data = response.json()   #parsing json
     except Exception:
         raise HTTPException(
             status_code=502,

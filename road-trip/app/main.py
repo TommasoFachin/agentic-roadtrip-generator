@@ -6,23 +6,29 @@ from app.services.geocoding_service import geocoding_citta, reverse_geocoding
 from app.services.routing_service import calcola_percorso
 from fastapi.responses import StreamingResponse
 from app.services.pdf_service import genera_pdf_itinerario
+from app.user_profile_router import router as user_profile_router
 from app.services.planner_service import (
     costruisci_itinerario,
     calcola_tappe,
     verifica_fattibilita_viaggio
 )
 
+#modello per l'endpoint interpreta-richiesta, che riceve un testo e restituisce un JSON strutturato secondo TripRequest
 class InterpretationRequest(BaseModel):
     testo: str
 
 app = FastAPI()
+app.include_router(user_profile_router)
 
+#endpoint per interpretare il testo naturale e restituire un JSON strutturato secondo TripRequest
 @app.post("/interpreta-richiesta")
 async def interpreta(payload: InterpretationRequest):
     return await interpreta_richiesta(payload.testo)
 
+#utility pe rpreparare i dati del viaggio
 def _prepara_dati_viaggio(richiesta: TripRequest):
 
+    # Geocoding: converte citta in coordinate
     coord_start = geocoding_citta(richiesta.luogo_partenza)
     coord_end = geocoding_citta(richiesta.luogo_destinazione)
 
@@ -55,8 +61,9 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
 
     return tappe_info, verifica, percorso, distanza_massima
 
+#endpoint per generare l'itinerario in formato PDF
 @app.post("/genera-itinerario")
-def genera_itinerario(richiesta: TripRequest):
+async def genera_itinerario(richiesta: TripRequest):
     tappe_info, verifica, percorso, distanza_massima = _prepara_dati_viaggio(richiesta)
 
     if not verifica["fattibile"]:
@@ -66,7 +73,7 @@ def genera_itinerario(richiesta: TripRequest):
             "tappe_info": tappe_info,
         }
 
-    itinerario = costruisci_itinerario(
+    itinerario = await costruisci_itinerario(
         percorso,
         richiesta.preferenze,
         distanza_massima,
@@ -88,14 +95,15 @@ def genera_itinerario(richiesta: TripRequest):
         "documento": documento
     }
 
+#endpoint per generare l'itinerario e restituirlo come file PDF scaricabile
 @app.post("/genera-itinerario-pdf")
-def genera_itinerario_pdf(richiesta: TripRequest):
+async def genera_itinerario_pdf(richiesta: TripRequest):
     tappe_info, verifica, percorso, distanza_massima = _prepara_dati_viaggio(richiesta)
 
     if not verifica["fattibile"]:
         raise HTTPException(status_code=400, detail=f"Viaggio non fattibile: {verifica['motivo']}")
 
-    itinerario = costruisci_itinerario(
+    itinerario = await costruisci_itinerario(
         percorso,
         richiesta.preferenze,
         distanza_massima,

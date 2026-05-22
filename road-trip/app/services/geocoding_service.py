@@ -1,3 +1,5 @@
+#questo file si occupa di geocodifica e reverse geocodifica usando l'API gratuita Photon (Komoot),
+
 import requests
 from fastapi import HTTPException
 import time
