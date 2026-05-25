@@ -1,13 +1,30 @@
-from dotenv import load_dotenv
 import os
+from pathlib import Path
 
-# Carica il file .env
-load_dotenv()
+# --- CARICAMENTO SICURO DELLE CHIAVI ---
+# Leggiamo il file .env manualmente per bypassare i bug di Windows/dotenv
+env_path = Path(__file__).resolve().parent.parent / ".env"
+ORS_API_KEY_VALUE = None
 
+try:
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip().startswith("ORS_API_KEY"):
+                ORS_API_KEY_VALUE = line.split("=", 1)[1].strip(" '\"\n")
+                break
+except FileNotFoundError:
+    pass # La variabile rimarrà None
+
+if not ORS_API_KEY_VALUE:
+    print("\n" + "="*80)
+    print("⚠️ ATTENZIONE: ORS_API_KEY non trovata nel file .env.")
+    print("Il calcolo del percorso potrebbe fallire o avere limiti molto stretti.")
+    print(f"Percorso del file .env cercato: {env_path}")
+    print("="*80 + "\n")
 
 
 class Settings:
     project_name: str = "Road Trip API"
-    # Potrai aggiungere qui le tue configurazioni future (es. openai_api_key)
-    ORS_API_KEY = os.getenv("ORS_API_KEY")
+    ORS_API_KEY = ORS_API_KEY_VALUE
+
 settings = Settings()

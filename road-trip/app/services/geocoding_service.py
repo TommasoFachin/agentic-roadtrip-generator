@@ -8,45 +8,59 @@ from functools import lru_cache
 @lru_cache(maxsize=128)
 def geocoding_citta(nome_citta: str) -> tuple[float, float]:
     """
-    Restituisce (lon, lat) del centro città usando l'API gratuita Photon (Komoot).
-    Sostituisce Nominatim per evitare i severi blocchi 429.
+    Restituisce (lon, lat) del centro città.
+    Usa Nominatim come primario perché supporta tutte le lingue (es. "Parigi" invece di "Paris").
+    Usa Photon come fallback.
     """
-    url = "https://photon.komoot.io/api/"
-    params = {
-        "q": nome_citta,
-        "limit": 1
+    # Cambiamo User-Agent con un timestamp per evitare blocchi anti-spam di Nominatim
+    headers = {
+        "User-Agent": f"RoadTrip-Tommaso-{int(time.time())}@student.example.com",
+        "Accept-Language": "it"
     }
 
-    headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0"}
+    print(f"   > Cerco coordinate per: {nome_citta}...")
 
-    for attempt in range(3):
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=10)
-            
-            if r.status_code != 200:
-                print(f"DEBUG GEOCoding: Photon ha risposto con {r.status_code} - {r.text}")
-                time.sleep(2.0)
-                continue
-                
+    # --- 1. PRIMARIO: NOMINATIM (Intelligente con le lingue) ---
+    url_nominatim = "https://nominatim.openstreetmap.org/search"
+    params_nominatim = {"q": nome_citta, "format": "json", "limit": 1}
+    try:
+        r = requests.get(url_nominatim, params=params_nominatim, headers=headers, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            if data:
+                # Nominatim restituisce lat e lon come stringhe
+                lon, lat = float(data[0]["lon"]), float(data[0]["lat"])
+                print(f"     [Nominatim] Trovato: {lat}, {lon}")
+                return lon, lat
+        else:
+            print(f"     [Nominatim] Errore API: {r.status_code} - {r.text}")
+    except Exception as e:
+        print(f"     [Nominatim] Eccezione: {e}")
+
+    # --- 2. FALLBACK: PHOTON ---
+    url_photon = "https://photon.komoot.io/api/"
+    params_photon = {
+        "q": nome_citta.split(",")[0].strip(),
+        "limit": 1,
+        "lang": "default"
+    }
+
+    try:
+        r = requests.get(url_photon, params=params_photon, headers=headers, timeout=10)
+        if r.status_code == 200:
             data = r.json()
             features = data.get("features", [])
-            if not features:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"Impossibile trovare coordinate per: {nome_citta}"
-                )
+            if features:
+                coords = features[0]["geometry"]["coordinates"]
+                lon, lat = float(coords[0]), float(coords[1])
+                print(f"     [Photon] Trovato: {lat}, {lon}")
+                return lon, lat
+        else:
+            print(f"     [Photon] Errore API: {r.status_code}")
+    except Exception as e:
+        print(f"     [Photon] Eccezione: {e}")
 
-            coords = features[0]["geometry"]["coordinates"]
-            # Photon restituisce [lon, lat]
-            return float(coords[0]), float(coords[1])
-            
-        except requests.exceptions.RequestException as e:
-            print(f"DEBUG GEOCoding: Errore di rete: {e}")
-            if attempt == 2:
-                raise HTTPException(status_code=503, detail="Servizio di geocodifica non raggiungibile")
-            time.sleep(2.0)
-
-    raise HTTPException(status_code=502, detail="Errore servizio geocoding (Photon API)")
+    raise HTTPException(status_code=404, detail=f"Impossibile trovare coordinate per: {nome_citta}")
 
 @lru_cache(maxsize=1024)
 def reverse_geocoding(lat: float, lon: float) -> str:
@@ -56,9 +70,10 @@ def reverse_geocoding(lat: float, lon: float) -> str:
     url = "https://photon.komoot.io/reverse"
     params = {
         "lat": round(lat, 3),
-        "lon": round(lon, 3)
+        "lon": round(lon, 3),
+        "lang": "default"
     }
-    headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0"}
+    headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0 (tommaso.uni@example.com)"}
 
     for attempt in range(3):
         try:
@@ -71,7 +86,7 @@ def reverse_geocoding(lat: float, lon: float) -> str:
             data = r.json()
             features = data.get("features", [])
             if not features:
-                return "Località sconosciuta"
+                break
 
             props = features[0]["properties"]
 
@@ -85,7 +100,18 @@ def reverse_geocoding(lat: float, lon: float) -> str:
 
         except Exception:
             if attempt == 2:
-                return "Località sconosciuta"
+                break
             time.sleep(2.0)
             
+    # --- FALLBACK SU NOMINATIM ---
+    url_nominatim = "https://nominatim.openstreetmap.org/reverse"
+    params_nominatim = {"lat": lat, "lon": lon, "format": "json"}
+    try:
+        r = requests.get(url_nominatim, params=params_nominatim, headers=headers, timeout=10)
+        if r.status_code == 200:
+            address = r.json().get("address", {})
+            return address.get("city") or address.get("town") or address.get("village") or "Località sconosciuta"
+    except Exception:
+        pass
+
     return "Località sconosciuta"

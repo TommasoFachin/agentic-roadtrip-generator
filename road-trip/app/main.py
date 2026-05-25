@@ -7,6 +7,7 @@ from app.services.routing_service import calcola_percorso
 from fastapi.responses import StreamingResponse
 from app.services.pdf_service import genera_pdf_itinerario
 from app.user_profile_router import router as user_profile_router
+from fastapi.concurrency import run_in_threadpool
 from app.services.planner_service import (
     costruisci_itinerario,
     calcola_tappe,
@@ -64,7 +65,7 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
 #endpoint per generare l'itinerario in formato PDF
 @app.post("/genera-itinerario")
 async def genera_itinerario(richiesta: TripRequest):
-    tappe_info, verifica, percorso, distanza_massima = _prepara_dati_viaggio(richiesta)
+    tappe_info, verifica, percorso, distanza_massima = await run_in_threadpool(_prepara_dati_viaggio, richiesta)
 
     if not verifica["fattibile"]:
         return {
@@ -98,7 +99,7 @@ async def genera_itinerario(richiesta: TripRequest):
 #endpoint per generare l'itinerario e restituirlo come file PDF scaricabile
 @app.post("/genera-itinerario-pdf")
 async def genera_itinerario_pdf(richiesta: TripRequest):
-    tappe_info, verifica, percorso, distanza_massima = _prepara_dati_viaggio(richiesta)
+    tappe_info, verifica, percorso, distanza_massima = await run_in_threadpool(_prepara_dati_viaggio, richiesta)
 
     if not verifica["fattibile"]:
         raise HTTPException(status_code=400, detail=f"Viaggio non fattibile: {verifica['motivo']}")

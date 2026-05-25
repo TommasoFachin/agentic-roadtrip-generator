@@ -184,8 +184,9 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
     tempo_extra = 0
 
     kinds_base = mappa_interessi(preferenze.interessi)
-
+    
     for i, tappa in enumerate(tappe):
+        print(f"\n--- [Planner] Elaborazione Giorno {i + 1}/{giorni_disponibili} ---")
         giorno_data = data_partenza + timedelta(days=i)
 
         distanza_giornaliera = tappa["distanza_km"]
@@ -220,6 +221,7 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
         lat_end, lon_end = tappa["end_coord"]
 
         # Città/paese della tappa
+        print(f"   > Ricerca città di destinazione...")
         citta_tappa = reverse_geocoding(lat_end, lon_end)
 
         # POI lungo la tappa: punto a metà (0.5) per ridurre il numero di richieste a Nominatim
@@ -237,13 +239,14 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
         poi_dict = {}
 
         #POI lungo la tappa (punto intermedio)
+        print(f"   > Ricerca POI intermedi e finali su OpenTripMap...")
         for lat_p, lon_p in punti:
             risultati = cerca_poi(
                 lat=lat_p,
                 lon=lon_p,
                 kinds=kinds_base,
                 radius=8000,
-                limit=20
+                limit=100
             )
             for p in risultati:
                 poi_dict[p["name"]] = p
@@ -257,21 +260,23 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
                     lon=lon_f,
                     kinds=kinds_base,
                     radius=8000,
-                    limit=20
+                    limit=100
                 )
                 for p in risultati_finale:
                     poi_dict[p["name"]] = p
             except:
                 pass
 
-        # Ordina per popolarità
+        # Ordina per importanza (rate) decrescente, a parità di rate per distanza
         poi_ordinati = sorted(
             poi_dict.values(),
-            key=lambda x: (-x.get("popularity", 0), x.get("dist", 999999))
+            key=lambda x: (-x.get("rate", 0), x.get("dist", 999999))
         )
 
         # --- SELEZIONE INTELLIGENTE DEI POI TRAMITE LLM ---
+        print(f"   > Analisi e selezione POI tramite LLM (Mistral)... (potrebbe richiedere tempo)")
         poi = await seleziona_poi_con_llm(poi_ordinati, profilo.dict())
+        print(f"   > Giorno {i + 1} completato con successo!")
 
         giorno = DayPlan(
             giorno=i + 1,

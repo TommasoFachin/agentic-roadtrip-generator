@@ -4,8 +4,27 @@
 import requests
 import os
 import re
+from pathlib import Path
 
-OPENTRIPMAP_API_KEY = os.getenv("OPENTRIPMAP_API_KEY")
+# --- CARICAMENTO SICURO CHIAVE API ---
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+OPENTRIPMAP_API_KEY = None
+try:
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip().startswith("OPENTRIPMAP_API_KEY"):
+                OPENTRIPMAP_API_KEY = line.split("=", 1)[1].strip(" '\"\n")
+                break
+except FileNotFoundError:
+    pass
+
+if not OPENTRIPMAP_API_KEY:
+    print("\n" + "="*80)
+    print("⚠️ ATTENZIONE: OPENTRIPMAP_API_KEY non trovata nel file .env.")
+    print("La ricerca dei Punti di Interesse (POI) non funzionerà.")
+    print(f"Percorso del file .env cercato: {env_path}")
+    print("="*80 + "\n")
+
 BASE_URL = "https://api.opentripmap.com/0.1/en/places"
 
 # funzione che, dato latitudine, longitudine e raggio, cerca POI popolari usando OpenTripMap,
@@ -33,7 +52,11 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
 
     url = f"{BASE_URL}/radius"
     #chiamata HTTP GET a OpenTripMap API
-    response = requests.get(url, params=params)
+    try:
+        response = requests.get(url, params=params, timeout=10)
+    except requests.exceptions.RequestException as e:
+        print(f"Errore di rete OpenTripMap API: {e}")
+        return []
 
     if response.status_code != 200:
         print(f"Errore OpenTripMap API ({response.status_code}): {response.text}")
@@ -61,6 +84,7 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
             "name": name,
             "kind": kinds,
             "dist": item.get("dist", 0),
+            "rate": item.get("rate", 0),
             "lat": item.get("point", {}).get("lat"),
             "lon": item.get("point", {}).get("lon")
         })
@@ -76,10 +100,10 @@ def mappa_interessi(interessi):
     mapping = {
         "cibo": ["foods"],
         "natura": ["natural"],
-        "città": ["cultural", "architecture"],
+        "città": ["cultural", "architecture", "interesting_places"],
         "arte": ["museums", "cultural"],
         "musei": ["museums"],  
-        "storia": ["historic"]
+        "storia": ["historic", "monuments_and_memorials"]
     }
 
     kinds = []

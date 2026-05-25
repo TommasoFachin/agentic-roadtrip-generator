@@ -13,44 +13,70 @@ URL_PLANNER = "http://127.0.0.1:8000/genera-itinerario"
 
 print("\n=== CHATBOT PROFILO UTENTE ===")
 print("Scrivi i tuoi messaggi. Scrivi 'fine' per terminare la chat.\n")
+print("TIP: Durante la chat, ricordati di specificare tutto il necessario:")
+print("   - Luogo di partenza e destinazione")
+print("   - Date (es. dal 1 al 5 maggio)")
+print("   - Limite di km giornalieri\n")
 
-while True:
-    testo = input("Tu: ")
+storia_messaggi = []
+dati_completi = False
 
-    if testo.lower().strip() == "fine":
-        print("\nChatbot terminato. Passo allo STEP B...\n")
-        break
+while not dati_completi:
+    while True:
+        testo = input("Tu: ")
 
-    payload = {"messaggio": testo}
-    response = requests.post(URL_CHATBOT, json=payload)
+        if testo.lower().strip() == "fine":
+            print("\nChatbot terminato. Passo allo STEP B (Verifica Dati)...\n")
+            break
 
-    print("\nSTATUS:", response.status_code)
-    try:
-        print("RISPOSTA CHATBOT:")
-        print(json.dumps(response.json(), indent=4, ensure_ascii=False))
-    except:
-        print("Risposta non JSON:", response.text)
+        storia_messaggi.append(testo)
 
-    print("\n----------------------------------------\n")
+        payload = {"messaggio": testo}
+        response = requests.post(URL_CHATBOT, json=payload)
+
+        print("\nSTATUS:", response.status_code)
+        try:
+            print("RISPOSTA CHATBOT:")
+            print(json.dumps(response.json(), indent=4, ensure_ascii=False))
+        except:
+            print("Risposta non JSON:", response.text)
+
+        print("\n----------------------------------------\n")
 
 
-# ============================================================
-# STEP B — TEST LLM (testo naturale → JSON viaggio)
-# ============================================================
+    # ============================================================
+    # STEP B — TEST LLM (testo naturale → JSON viaggio)
+    # ============================================================
 
-print("\n=== STEP B: Test LLM Viaggio ===")
+    print("\n=== STEP B: Test LLM Viaggio ===")
 
-testo = {
-    "testo": "Vorrei un viaggio da Modena ad Amsterdam dal 1 al 5 maggio, massimo 400 km al giorno, interessato a arte e natura."
-}
+    # Uniamo tutti i messaggi della chat in un unico grande testo di contesto
+    testo_completo_chat = " ".join(storia_messaggi)
 
-response_llm = requests.post(URL_LLM, json=testo)
+    if not testo_completo_chat.strip():
+        print("ERRORE: Non hai scritto niente!")
+        print("Inserisci i dati del viaggio prima di scrivere 'fine'.\n")
+        continue
 
-print("STATUS:", response_llm.status_code)
-print("JSON generato dall'LLM:")
-print(json.dumps(response_llm.json(), indent=4, ensure_ascii=False))
+    testo = {
+        "testo": testo_completo_chat
+    }
 
-json_viaggio = response_llm.json()
+    response_llm = requests.post(URL_LLM, json=testo)
+
+    if response_llm.status_code == 200:
+        print("Tutti i dati sono stati inseriti correttamente!")
+        print("STATUS:", response_llm.status_code)
+        print("JSON generato dall'LLM:")
+        print(json.dumps(response_llm.json(), indent=4, ensure_ascii=False))
+        
+        json_viaggio = response_llm.json()
+        dati_completi = True
+    else:
+        print("ERRORE: Dati del viaggio mancanti o non chiari.")
+        print("L'intelligenza artificiale non ha trovato tutti i parametri obbligatori.")
+        print("Assicurati di aver indicato: Luogo di partenza, Destinazione, Date (inizio e fine) e Max km/giorno.")
+        print("Scrivi i dati mancanti qui sotto e digita di nuovo 'fine' per riprovare.\n")
 
 
 # ============================================================

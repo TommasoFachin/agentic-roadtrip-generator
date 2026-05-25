@@ -52,11 +52,9 @@ async def chatbot_messaggio(payload: ChatbotMessage):
 
     # Convertiamo in dizionario così l'LLM vedrà un JSON reale invece di un oggetto Pydantic
     # 1) estrai aggiornamenti del profilo
-    risultato = await interpreta_messaggio_chatbot(messaggio, profilo.model_dump())
+    # Questa funzione ora restituisce sia gli aggiornamenti che la risposta naturale
+    risultato = await interpreta_messaggio_chatbot(messaggio, profilo.model_dump()) 
     aggiornamenti = risultato.get("aggiornamenti", {})
-
-    # 2) genera risposta naturale con agente dedicato
-    risposta = await genera_risposta_naturale(messaggio)
 
     if not isinstance(aggiornamenti, dict):
         aggiornamenti = {}
@@ -79,7 +77,7 @@ async def chatbot_messaggio(payload: ChatbotMessage):
 
 
     return {
-        "risposta": risposta,
+        "risposta": risultato.get("risposta", "Ok, ho capito."),
         "profilo_aggiornato": profilo,
         "aggiornamenti": aggiornamenti
     }

@@ -27,10 +27,13 @@ def calcola_percorso(start_lon: float, start_lat: float, end_lon: float, end_lat
     }
 
     #chiamata HTTP POST a ORS
-    response = requests.post(ORS_DIRECTIONS_URL, json=body, headers=headers)
-
-    print("STATUS ORS:", response.status_code)
-    print("TESTO ORS:", response.text[:500])
+    try:
+        response = requests.post(ORS_DIRECTIONS_URL, json=body, headers=headers, timeout=15)
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Errore di rete durante la chiamata a ORS: {e}"
+        )
 
     try:
         data = response.json()   #parsing json
@@ -38,6 +41,12 @@ def calcola_percorso(start_lon: float, start_lat: float, end_lon: float, end_lat
         raise HTTPException(
             status_code=502,
             detail=f"ORS ha restituito una risposta non JSON: {response.text}"
+        )
+        
+    if "error" in data:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Errore API ORS: {data['error'].get('message', data['error'])}"
         )
 
     if "features" not in data or not data["features"]:
