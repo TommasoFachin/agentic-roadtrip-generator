@@ -2,15 +2,17 @@
 
 
 from datetime import datetime, timedelta, date
+import asyncio
 from app.models import TripPreferences, Stop, TripPlan, DayPlan
 from fastapi import HTTPException
 from app.services.poi_service import cerca_poi, mappa_interessi
 import math
+from app.services.event_service import cerca_eventi
 import requests
 from typing import List, Tuple
 from app.services.geocoding_service import reverse_geocoding, geocoding_citta
 from app.services.user_profile_service import get_user_profile
-from app.agent.llm_agent import seleziona_poi_con_llm
+from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm
 
 
 class ItineraryNotPossibleError(Exception):
@@ -183,7 +185,9 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
     giorni = []
     tempo_extra = 0
 
-    kinds_base = mappa_interessi(preferenze.interessi)
+    # 🔥 Applica il mapping degli interessi PRIMA di cercare i POI
+    interessi_mappati = mappa_interessi(preferenze.interessi)
+    kinds_base = interessi_mappati
     
     for i, tappa in enumerate(tappe):
         print(f"\n--- [Planner] Elaborazione Giorno {i + 1}/{giorni_disponibili} ---")
@@ -224,58 +228,76 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
         print(f"   > Ricerca città di destinazione...")
         citta_tappa = reverse_geocoding(lat_end, lon_end)
 
-        # POI lungo la tappa: punto a metà (0.5) per ridurre il numero di richieste a Nominatim
-        
-        geometry = percorso["geometry"]
-        lat_start, lon_start = tappa["start_coord"]
-
-        punti = punti_lungo_tappa(
-            geometry=geometry,
-            start_coord=(lat_start, lon_start),
-            end_coord=(lat_end, lon_end),
-            fractions=(0.5,)
-        )
-
+        is_last_day = (i == len(tappe) - 1)
         poi_dict = {}
+        poi_ordinati = []
 
-        #POI lungo la tappa (punto intermedio)
-        print(f"   > Ricerca POI intermedi e finali su OpenTripMap...")
-        for lat_p, lon_p in punti:
-            risultati = cerca_poi(
-                lat=lat_p,
-                lon=lon_p,
-                kinds=kinds_base,
-                radius=8000,
-                limit=100
-            )
-            for p in risultati:
-                poi_dict[p["name"]] = p
-
-        # POI della città finale della tappa
-        if citta_tappa and citta_tappa != "Località sconosciuta":
+        print(f"   > Ricerca POI su OpenTripMap...")
+        if is_last_day:
+            # ULTIMO GIORNO: Ricerca GRANDE e PULITA solo sulla destinazione finale.
             try:
                 lon_f, lat_f = geocoding_citta(citta_tappa)
+                
+                # 1. Cerchiamo prima solo attrazioni di FAMA MONDIALE (salta le chiesette locali)
                 risultati_finale = cerca_poi(
                     lat=lat_f,
                     lon=lon_f,
                     kinds=kinds_base,
-                    radius=8000,
-                    limit=100
+                    radius=15000,
+                    limit=500,
+                    min_rate="3"
                 )
+                
+                # 2. Fallback: Se trova poco, si tratta di una città media (cerchiamo fama nazionale)
+                if len(risultati_finale) < 10:
+                    risultati_finale = cerca_poi(
+                        lat=lat_f, lon=lon_f, kinds=kinds_base, radius=15000, limit=500, min_rate="2"
+                    )
+                    
+                # 3. Fallback: Se non trova nulla, è un paesino (cerchiamo tutto)
+                if len(risultati_finale) < 5:
+                    risultati_finale = cerca_poi(
+                        lat=lat_f, lon=lon_f, kinds=kinds_base, radius=15000, limit=500
+                    )
+                
                 for p in risultati_finale:
                     poi_dict[p["name"]] = p
-            except:
-                pass
+            except Exception as e:
+                print(f"     Errore ricerca POI finali: {e}")
+        else:
+            # GIORNI INTERMEDI: Logica precedente con ricerca a metà tappa e nella città di arrivo.
+            geometry = percorso["geometry"]
+            lat_start, lon_start = tappa["start_coord"]
+            punti = punti_lungo_tappa(geometry, (lat_start, lon_start), (lat_end, lon_end), fractions=(0.5,))
+            
+            for lat_p, lon_p in punti:
+                risultati = cerca_poi(lat=lat_p, lon=lon_p, kinds=kinds_base, radius=8000, limit=200)
+                for p in risultati:
+                    poi_dict[p["name"]] = p
 
-        # Ordina per importanza (rate) decrescente, a parità di rate per distanza
-        poi_ordinati = sorted(
-            poi_dict.values(),
-            key=lambda x: (-x.get("rate", 0), x.get("dist", 999999))
-        )
+            if citta_tappa and citta_tappa != "Località sconosciuta":
+                try:
+                    lon_f, lat_f = geocoding_citta(citta_tappa)
+                    risultati_finale = cerca_poi(lat=lat_f, lon=lon_f, kinds=kinds_base, radius=8000, limit=200)
+                    for p in risultati_finale:
+                        poi_dict[p["name"]] = p
+                except:
+                    pass
+            
+        # Ordina TUTTI i risultati per importanza (rate) decrescente
+        poi_ordinati = sorted(poi_dict.values(), key=lambda x: -x.get("rate", 0))
 
         # --- SELEZIONE INTELLIGENTE DEI POI TRAMITE LLM ---
         print(f"   > Analisi e selezione POI tramite LLM (Mistral)... (potrebbe richiedere tempo)")
-        poi = await seleziona_poi_con_llm(poi_ordinati, profilo.dict())
+        poi = await seleziona_poi_con_llm(poi_ordinati, {"interessi": preferenze.interessi})
+
+        # --- SELEZIONE EVENTI TRAMITE LLM ---
+        # Usa gli interessi generali del profilo utente, non quelli del viaggio specifico
+        lista_eventi = cerca_eventi(citta_tappa, giorno_data, profilo.interessi)
+        eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi)
+        
+        # Pausa anti-spam per Groq: 12 secondi per permettere la ricarica dei token ed evitare l'errore 429
+        await asyncio.sleep(12)
         print(f"   > Giorno {i + 1} completato con successo!")
 
         giorno = DayPlan(
@@ -287,6 +309,7 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
             ora_arrivo=ora_arrivo.strftime("%H:%M"),
             note="Orari realistici con pause e limite massimo alle 20:00.",
             poi=poi,
+            eventi=eventi,
             citta_tappa=citta_tappa
         )
 

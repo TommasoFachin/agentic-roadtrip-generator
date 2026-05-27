@@ -57,7 +57,7 @@ except FileNotFoundError:
 
 if not chiave_groq or not chiave_groq.startswith("gsk_"):
     print("\n" + "="*80)
-    print("❌ ERRORE CRITICO: IMPOSSIBILE AVVIARE L'APPLICAZIONE!")
+    print("ERRORE CRITICO: IMPOSSIBILE AVVIARE L'APPLICAZIONE!")
     print("La chiave API di Groq (GROQ_API_KEY) non è stata trovata o non è valida.")
     print(f"Percorso del file .env cercato: {env_path}")
     print("\nCONTROLLA QUESTI PUNTI:")
@@ -85,33 +85,26 @@ llm_viaggio = Agent(
 # ---------------------------------------------------------
 
 PROMPT_CHATBOT = """
-Sei un assistente che aggiorna un profilo utente.
+Sei un assistente che aggiorna un profilo utente e risponde in modo naturale.
 
-Il tuo compito è estrarre SOLO le informazioni utili dal messaggio dell’utente
-e restituire SOLO un JSON con i campi da aggiornare.
-La risposta naturale verrà generata dal sistema, NON da te.
+DEVI SEMPRE restituire un JSON con questa struttura:
+
+{
+  "aggiornamenti": {},
+  "risposta": "testo naturale"
+}
 
 REGOLE:
 
-1) Ignora completamente saluti e frasi generiche:
-   "ciao", "hey", "ok", "bene", "grazie", "come va", "buongiorno", ecc.
-   Se il messaggio contiene SOLO questo → restituisci {}.
+1) "aggiornamenti" deve contenere SOLO informazioni utili al profilo. Usa SOLO queste chiavi:
+   - interessi (lista, es: arte, natura, storia, monumenti, architettura, punti di interesse)
+   - preferenze_viaggio (lista, es: date del viaggio, limite km giornalieri)
+   - preferenze_cibo (lista)
+   - tappe_obbligatorie (lista di città)
 
-2) NON interpretare parole casuali come interessi.
+2) Ignora saluti e frasi generiche. Se non ci sono informazioni utili usa "aggiornamenti": {}
 
-3) Considera interessi SOLO se sono categorie reali:
-   arte, natura, sport, musica, fotografia, storia, tecnologia,
-   viaggi, cibo, cultura, architettura.
-
-4) Campi validi che puoi restituire:
-   - interessi (lista)
-   - budget
-   - stile_viaggio
-   - preferenze_cibo
-   - allergie
-   - citta_preferite
-
-5) Se non trovi informazioni utili → restituisci {}.
+3) "risposta" deve essere una frase naturale, amichevole e coerente con il messaggio.
 
 Rispondi SOLO con un JSON valido.
 """
@@ -218,42 +211,8 @@ async def interpreta_messaggio_chatbot(messaggio: str, profilo_attuale: dict) ->
     """
 
     prompt = f"""
-Sei un assistente che aggiorna un profilo utente e risponde in modo naturale.
-
-DEVI SEMPRE restituire un JSON con questa struttura:
-
-{{
-  "aggiornamenti": {{}},
-  "risposta": "testo naturale"
-}}
-
-REGOLE:
-
-1) "aggiornamenti" deve contenere SOLO informazioni utili al profilo:
-   - interessi (lista)
-   - preferenze_viaggio (lista)
-   - preferenze_cibo (lista)
-   - tappe_obbligatorie
-
-2) Ignora completamente saluti e frasi generiche:
-   "ciao", "hey", "ok", "bene", "grazie", "come va", "buongiorno", ecc.
-   Se il messaggio contiene SOLO questo → usa:
-   "aggiornamenti": {{}}
-
-3) NON interpretare parole casuali come interessi.
-   Considera interessi SOLO se sono categorie reali:
-   arte, natura, sport, musica, fotografia, storia, tecnologia,
-   viaggi, cibo, cultura, architettura e altre.
-
-4) "risposta" deve essere una frase naturale, amichevole e coerente con il messaggio.
-   - Se il messaggio è un saluto → rispondi come in una chat normale.
-   - Se il messaggio contiene preferenze → conferma che aggiorni il profilo.
-
-5) Rispondi SEMPRE e SOLO con un JSON valido.
-   Nessun testo fuori dal JSON.
-
 Profilo attuale:
-{profilo_attuale}
+{json.dumps(profilo_attuale, ensure_ascii=False)}
 
 Messaggio dell'utente:
 "{messaggio}"
@@ -302,74 +261,208 @@ Messaggio dell'utente:
 # FUNZIONE: selezione POI
 # ---------------------------------------------------------
 
-PROMPT_POI = """
-Sei un estrattore di dati. Il tuo unico scopo è ricevere liste di luoghi e restituire un JSON.
-NON SEI un assistente conversazionale.
-NON DEVI MAI generare testo fuori dal JSON, nessuna spiegazione, nessun saluto, nessuna premessa.
+PROMPT_POI_PRO = """
+Sei un selezionatore intelligente di punti di interesse (POI).
+
+Riceverai:
+- gli interessi dell’utente
+- una lista di POI con nome, categorie, rating, distanza e coordinate
+
+Il tuo compito è selezionare i MIGLIORI 5 POI secondo queste regole:
+
+REGOLE DI SELEZIONE:
+1. Scegli POI coerenti con gli interessi dell’utente.
+2. Dai priorità ASSOLUTA ai POI di fama MONDIALE o NAZIONALE (es. Torre Eiffel, Muro di Berlino, Colosseo). Cercali attivamente!
+3. Evita POI troppo simili tra loro (es. 5 castelli identici).
+4. Evita POI con rating basso se ci sono alternative migliori.
+5. Se ci sono meno di 5 POI validi, restituisci tutti quelli disponibili.
+6. Rispondi SOLO con JSON valido, senza testo aggiuntivo.
+
+STRUTTURA JSON DA RESTITUIRE:
+{
+  "poi_selezionati": [
+    {"nome": "Nome POI 1"},
+    {"nome": "Nome POI 2"}
+  ]
+}
+IMPORTANTE: Assicurati che il JSON sia formattato correttamente, senza virgole alla fine dell'ultimo elemento della lista.
 """
+
 llm_poi = Agent(
     model=model,
-    instructions=PROMPT_POI
+    instructions=PROMPT_POI_PRO
 )
+
+
+# ---------------------------------------------------------
+# AGENTE 4 — SELEZIONE EVENTI
+# ---------------------------------------------------------
+
+PROMPT_EVENTI = """
+Sei un assistente che suggerisce eventi serali per un viaggiatore.
+
+Riceverai:
+- gli interessi generali dell'utente (es. musica, sport, teatro)
+- una lista di eventi disponibili per la serata con nome, URL, orario, luogo e genere.
+
+Il tuo compito è selezionare i MIGLIORI 2 eventi (massimo) che potrebbero piacere all'utente.
+
+REGOLE DI SELEZIONE:
+1. Scegli eventi molto pertinenti agli interessi dell'utente.
+2. Se non ci sono eventi pertinenti, non suggerire nulla (restituisci una lista vuota).
+3. Se ci sono più eventi validi, scegli i 2 più interessanti o diversi tra loro.
+4. Rispondi SOLO con un JSON valido, senza testo aggiuntivo.
+
+STRUTTURA JSON DA RESTITUIRE:
+{
+  "eventi_selezionati": [
+    {"nome": "Nome Evento 1"},
+    {"nome": "Nome Evento 2"}
+  ]
+}
+IMPORTANTE: Assicurati che il JSON sia formattato correttamente, senza virgole alla fine dell'ultimo elemento della lista.
+"""
+
+llm_eventi = Agent(
+    model=model,
+    instructions=PROMPT_EVENTI
+)
+
+async def seleziona_eventi_con_llm(lista_eventi: list, interessi: list) -> list:
+    if not lista_eventi:
+        return []
+
+    print("   > Analisi e selezione Eventi tramite LLM...")
+
+    interessi_eventi = [i for i in interessi if i.lower() not in ["monumenti", "storia", "architettura", "punti di interesse", "centro città"]]
+    if not interessi_eventi:
+        print("     Nessun interesse pertinente per gli eventi trovato nel profilo. Salto selezione.")
+        return []
+
+    # --- COMPRESSIONE EVENTI PER RISPARMIARE TOKEN ---
+    eventi_compatti = []
+    for e in lista_eventi[:15]:  # Limitiamo a 15 eventi per sicurezza
+        classifications = e.get("classifications", [{}])[0]
+        genere = classifications.get("genre", {}).get("name", "")
+        segmento = classifications.get("segment", {}).get("name", "")
+        tipo = f"{segmento} - {genere}".strip(" -") or "Evento"
+        
+        eventi_compatti.append({
+            "nome": e.get("name"),
+            "tipo": tipo
+        })
+
+    prompt = f"""
+Interessi utente: {interessi_eventi}
+
+Lista eventi disponibili:
+{json.dumps(eventi_compatti, ensure_ascii=False)}
+
+Seleziona i 2 migliori eventi secondo le regole.
+Rispondi SOLO con JSON valido.
+"""
+
+    try:
+        result = await asyncio.wait_for(llm_eventi.run(prompt), timeout=20.0)
+        raw_output = getattr(result, 'data', getattr(result, 'output', ''))
+        json_text = str(raw_output).strip()
+
+        match = re.search(r'\{.*\}', json_text, re.DOTALL)
+        if not match: return []
+
+        json_text = re.sub(r',\s*\]', ']', match.group(0))
+        data = json.loads(json_text)
+        return data.get("eventi_selezionati", [])
+    except Exception as e:
+        print(f"     Errore selezione Eventi: {e}")
+        return []
 
 async def seleziona_poi_con_llm(lista_poi: list, profilo: dict) -> list:
     if not lista_poi:
         return []
 
-    # Ottimizzazione: inviamo all'LLM fino a 60 POI. 
-    # Visto che usiamo Groq (molto veloce), l'LLM può analizzare più opzioni.
-    poi_semplificati = [{"nome": p["name"], "categoria": p["kind"]} for p in lista_poi[:60]]
-    interessi = profilo.get("interessi", [])
+    # Pre-filtro: ridotto a 40 per risparmiare Token. I monumenti famosi sono già in cima grazie al min_rate="3"!
+    lista_poi = lista_poi[:40]
+
+    poi_compatti = []
+
+    for p in lista_poi:
+        # --- CATEGORIA SEMPLIFICATA ---
+        # 🔥 FIX ASSOLUTO: La chiave corretta è "kind", non "kinds"!
+        kinds = p.get("kind", "")
+        categoria = kinds.split(",")[0].replace("_", " ").capitalize() if kinds else "Varie"
+
+        poi_compatti.append({
+            "n": p.get("name"),
+            "c": categoria,
+            "r": float(p.get("rate", 0))
+        })
+
+    # FILTRO SALVAVITA: Rimuove i dati "sporchi" che confondono l'AI (es. "limite km: 250")
+    interessi_raw = profilo.get("interessi", [])
+    interessi = [i for i in interessi_raw if "limite" not in i.lower() and "data" not in i.lower()]
+    if not interessi:
+        interessi = ["storia", "monumenti", "cultura", "luoghi iconici"]
 
     prompt = f"""
-Interessi dell'utente: {interessi}
+Interessi utente: {interessi}
 
-Lista dei POI disponibili:
-{json.dumps(poi_semplificati, ensure_ascii=False)}
+Lista POI disponibili (n=nome, c=categoria, r=rating):
+{json.dumps(poi_compatti, ensure_ascii=False)}
 
-Scegli ESATTAMENTE 5 POI coerenti con gli interessi dell'utente (se la lista ne contiene meno di 5, sceglili tutti).
-Dai priorità assoluta ai luoghi più famosi e iconici (es. a Parigi la Torre Eiffel, a Berlino il Muro, ecc.), ma assicurati sempre di completare la lista fino a 5.
-Rispondi RESTITUENDO ESCLUSIVAMENTE IL JSON con questa esatta struttura:
+Seleziona i 5 migliori POI secondo le regole.
+Rispondi SOLO con JSON valido:
 {{
-  "nomi_poi_selezionati": ["nome 1", "nome 2", "nome 3", "nome 4", "nome 5"]
+  "poi_selezionati": [
+    {{"nome": "..."}}
+  ]
 }}
 """
 
     try:
-        # Abbassato il timeout a 30s: Mistral con input ridotto deve rispondere molto più in fretta
         result = await asyncio.wait_for(llm_poi.run(prompt), timeout=30.0)
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
 
+        # Pulizia robusta in caso l'LLM aggiunga i backtick del Markdown
         if json_text.startswith("```json"):
             json_text = json_text[7:]
         elif json_text.startswith("```"):
             json_text = json_text[3:]
         if json_text.endswith("```"):
             json_text = json_text[:-3]
-
+            
         json_text = json_text.strip()
 
-        # Estrae forzatamente solo il blocco JSON per evitare errori di decodifica
+        # --- ESTRAZIONE JSON ROBUSTA ---
         match = re.search(r'\{.*\}', json_text, re.DOTALL)
-        if match:
-            json_text = match.group(0)
+        if not match:
+            raise ValueError("Nessun JSON trovato nella risposta LLM")
+
+        json_text = match.group(0)
+
+        # --- FIX JSON: Rimuove le virgole finali (trailing commas) generate per errore dall'LLM ---
+        json_text = re.sub(r',\s*\]', ']', json_text)
+        json_text = re.sub(r',\s*\}', '}', json_text)
 
         data = json.loads(json_text)
-        
-        if not isinstance(data, dict):
-            return lista_poi[:3]
+        selezionati = data.get("poi_selezionati", [])
+
+        poi_finali = []
+        nomi_gia_aggiunti = set()
+        for sel in selezionati:
+            nome_poi = sel.get("nome")
+            if not nome_poi or nome_poi in nomi_gia_aggiunti:
+                continue
             
-        # Otteniamo la lista dei nomi scelti dall'AI
-        nomi_selezionati = data.get("nomi_poi_selezionati", [])
-        
-        # Recuperiamo i dati completi originali (con coordinate e distanze) facendo un match sui nomi
-        poi_scelti_completi = [p for p in lista_poi if p["name"] in nomi_selezionati]
-        
-        return poi_scelti_completi if poi_scelti_completi else lista_poi[:3]
-    except asyncio.TimeoutError:
-        print("\nErrore nell'agente POI: Timeout! (Ollama ha impiegato più di 30 secondi per rispondere)")
-        return lista_poi[:3]
+            for p in lista_poi:
+                if p.get("name") == nome_poi:
+                    poi_finali.append(p)
+                    nomi_gia_aggiunti.add(nome_poi)
+                    break 
+
+        return poi_finali if poi_finali else lista_poi[:5]
+
     except Exception as e:
-        print(f"\nErrore nell'agente POI: {type(e).__name__} - {e}")
-        return lista_poi[:3]
+        print(f"Errore selezione POI PRO: {e}")
+        return lista_poi[:5]

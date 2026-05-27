@@ -5,13 +5,15 @@ from pathlib import Path
 # Leggiamo il file .env manualmente per bypassare i bug di Windows/dotenv
 env_path = Path(__file__).resolve().parent.parent / ".env"
 ORS_API_KEY_VALUE = None
+TICKETMASTER_API_KEY_VALUE = None
 
 try:
     with open(env_path, "r", encoding="utf-8") as f:
         for line in f:
             if line.strip().startswith("ORS_API_KEY"):
                 ORS_API_KEY_VALUE = line.split("=", 1)[1].strip(" '\"\n")
-                break
+            elif line.strip().startswith("TICKETMASTER_API_KEY"):
+                TICKETMASTER_API_KEY_VALUE = line.split("=", 1)[1].strip(" '\"\n")
 except FileNotFoundError:
     pass # La variabile rimarrà None
 
@@ -26,5 +28,6 @@ if not ORS_API_KEY_VALUE:
 class Settings:
     project_name: str = "Road Trip API"
     ORS_API_KEY = ORS_API_KEY_VALUE
+    TICKETMASTER_API_KEY = TICKETMASTER_API_KEY_VALUE
 
 settings = Settings()

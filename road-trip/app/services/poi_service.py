@@ -30,43 +30,39 @@ BASE_URL = "https://api.opentripmap.com/0.1/en/places"
 # funzione che, dato latitudine, longitudine e raggio, cerca POI popolari usando OpenTripMap,
 #  filtrando quelli meno rilevanti e restituendo una lista di POI con nome, categoria, distanza
 #  e coordinate.
-def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
-    """
-    Cerca POI popolari usando OpenTripMap.
-    Usa rate=3 e orderby=popularity per ottenere POI famosi.
-    Filtra indirizzi e categorie inutili.
-    """
+def cerca_poi(lat, lon, radius=30000, kinds=None, limit=100, min_rate=None):
     params = {
         "apikey": OPENTRIPMAP_API_KEY,
         "radius": radius,
         "lon": lon,
         "lat": lat,
         "limit": limit,
+        "orderby": "distance",
         "format": "json",
-        "rate": "3",
-        "orderby": "popularity"
     }
 
     if kinds:
         params["kinds"] = ",".join(set(kinds))
+        params["kinds_filter"] = "or"   
+        
+    if min_rate:
+        params["rate"] = min_rate
+
 
     url = f"{BASE_URL}/radius"
-    #chiamata HTTP GET a OpenTripMap API
+
     try:
         response = requests.get(url, params=params, timeout=10)
-    except requests.exceptions.RequestException as e:
-        print(f"Errore di rete OpenTripMap API: {e}")
+    except requests.exceptions.RequestException:
         return []
 
     if response.status_code != 200:
-        print(f"Errore OpenTripMap API ({response.status_code}): {response.text}")
         return []
 
     data = response.json()
 
-    # Filtri intelligenti
     address_pattern = re.compile(r'.*\s\d+')
-    blacklist = ["accomodations", "urban_environment", "historic_districts", "unclassified_objects"]
+    blacklist = ["accomodations", "unclassified_objects"]
 
     poi_list = []
     for item in data:
@@ -79,7 +75,6 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
         if any(b in kinds for b in blacklist):
             continue
 
-        #costruzione lista POI da restituire
         poi_list.append({
             "name": name,
             "kind": kinds,
@@ -91,24 +86,102 @@ def cerca_poi(lat, lon, radius=8000, kinds=None, limit=20):
 
     return poi_list
 
+
 # funzione che mappa gli interessi dell’utente alle categorie di OpenTripMap, 
 # restituendo una lista di categorie da usare nella ricerca dei POI.
 def mappa_interessi(interessi):
     """
     Mappa gli interessi dell’utente alle categorie OpenTripMap.
+    Versione PRO: supporta interessi in italiano e restituisce kinds utili
+    per ottenere POI iconici e turistici.
     """
+
     mapping = {
+        # CIBO
         "cibo": ["foods"],
-        "natura": ["natural"],
-        "città": ["cultural", "architecture", "interesting_places"],
-        "arte": ["museums", "cultural"],
-        "musei": ["museums"],  
-        "storia": ["historic", "monuments_and_memorials"]
+
+        # NATURA
+        "natura": ["natural", "parks"],
+
+        # CITTÀ / CENTRO
+        "città": ["urban_environment", "squares", "interesting_places"],
+        "centro": ["urban_environment", "squares"],
+        "piazze": ["squares", "urban_environment"],
+
+        # ARTE / CULTURA
+        "arte": ["art", "cultural", "museums", "art_galleries"],
+        "cultura": ["cultural", "museums", "art_galleries"],
+        "musei": ["museums", "cultural"],
+        "museo": ["museums", "cultural"],
+
+        # STORIA / MONUMENTI
+        "storia": ["historic", "monuments_and_memorials", "archaeology"],
+        "storico": ["historic", "monuments_and_memorials"],
+        "monumenti": [
+            "monuments_and_memorials",
+            "historic",
+            "architecture",
+            "historic_architecture",
+            "interesting_places",
+            "cultural"
+        ],
+
+        "punti di interesse": [
+            "interesting_places",
+            "tourist_facilities",
+            "architecture",
+            "historic",
+            "cultural",
+            "museums"
+        ],
+
+        "centro città": [
+            "urban_environment",
+            "squares",
+            "interesting_places",
+            "historic",
+            "architecture",
+            "cultural"
+        ],
+        "monumento": ["monuments_and_memorials", "historic"],
+        "guerra": ["war_memorials", "monuments_and_memorials"],
+
+        # ARCHITETTURA
+        "architettura": ["architecture", "historic_architecture"],
+        "edifici": ["architecture", "historic_architecture"],
+        "palazzi": ["palaces", "architecture"],
+
+        # INTERESSI GENERICI TURISTICI
+        
+        "punti d'interesse": ["interesting_places", "tourist_facilities"],
+        "famosi": ["interesting_places", "historic", "cultural"],
+        "iconici": ["interesting_places", "historic", "cultural"],
+        "turistici": ["interesting_places", "historic", "cultural"],
+
+        # RELIGIONE (solo se richiesto)
+        "chiese": ["churches", "religion"],
+        "religione": ["religion"],
+        "cattedrali": ["cathedrals", "religion"],
     }
 
     kinds = []
     for interesse in interessi:
-        if interesse in mapping:
-            kinds.extend(mapping[interesse])
+        interesse_lower = interesse.lower().strip()
+        if interesse_lower in mapping:
+            kinds.extend(mapping[interesse_lower])
 
-    return list(set(kinds))
+    # fallback intelligente se l’utente mette qualcosa di non mappato
+    if not kinds and interessi:
+        kinds = [
+            "historic",
+            "monuments_and_memorials",
+            "cultural",
+            "museums",
+            "architecture",
+            "urban_environment",
+            "squares",
+            "interesting_places"
+        ]
+
+    # rimuovi duplicati mantenendo ordine
+    return list(dict.fromkeys(kinds))

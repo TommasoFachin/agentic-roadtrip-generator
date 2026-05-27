@@ -29,6 +29,7 @@ class DayPlan(BaseModel):
     ora_arrivo: str
     note: str
     poi: list | None = None
+    eventi: list | None = None
     citta_tappa: str | None = None
 
     

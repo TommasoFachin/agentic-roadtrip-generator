@@ -56,9 +56,9 @@ def genera_pdf_itinerario(itinerario, documento_testuale):
 
             raw_kind = poi.get("kind")
             if isinstance(raw_kind, str):
-                kind = raw_kind
+                kind = raw_kind.split(",")[0].replace("_", " ").capitalize()
             elif isinstance(raw_kind, list):
-                kind = ", ".join(raw_kind)
+                kind = raw_kind[0].replace("_", " ").capitalize() if raw_kind else "n/d"
             else:
                 kind = "n/d"
 
@@ -72,6 +72,29 @@ def genera_pdf_itinerario(itinerario, documento_testuale):
             if y < 100:
                 c.showPage()
                 y = 800
+
+        y -= 10 # Spazio extra
+
+        # --- EVENTI ---
+        if giorno.eventi:
+            if y < 150:
+                c.showPage()
+                y = 800
+            
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(70, y, "Eventi suggeriti per la serata:")
+            y -= 20
+
+            c.setFont("Helvetica", 10)
+            for evento in giorno.eventi:
+                nome_evento = evento.get("nome", "(Senza nome)")
+                nome_evento = nome_evento.encode("latin-1", "replace").decode("latin-1")
+                c.drawString(90, y, f"- {nome_evento}")
+                y -= 15
+
+                if y < 100:
+                    c.showPage()
+                    y = 800
 
         y -= 20
 
