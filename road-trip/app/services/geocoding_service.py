@@ -65,52 +65,46 @@ def geocoding_citta(nome_citta: str) -> tuple[float, float]:
 @lru_cache(maxsize=1024)
 def reverse_geocoding(lat: float, lon: float) -> str:
     """
-    Restituisce la città/paese più vicino usando l'API gratuita Photon (Komoot).
+    Restituisce la città/paese più vicino.
+    Usa Nominatim come primario, filtrando appositamente solo per città,
+    comuni o paesi, ignorando nomi di vie o località sperdute in autostrada.
     """
-    url = "https://photon.komoot.io/reverse"
-    params = {
-        "lat": round(lat, 3),
-        "lon": round(lon, 3),
-        "lang": "default"
-    }
-    headers = {"User-Agent": "RoadTripGenerator-UniProject-Tommaso/1.0 (tommaso.uni@example.com)"}
+    headers = {"User-Agent": f"RoadTrip-Tommaso-{int(time.time())}@student.example.com"}
 
-    for attempt in range(3):
-        try:
-            r = requests.get(url, params=params, headers=headers, timeout=10)
-            
-            if r.status_code != 200:
-                time.sleep(2.0)
-                continue
-
-            data = r.json()
-            features = data.get("features", [])
-            if not features:
-                break
-
-            props = features[0]["properties"]
-
-            return (
-                props.get("city")
-                or props.get("town")
-                or props.get("village")
-                or props.get("name")
-                or "Località sconosciuta"
-            )
-
-        except Exception:
-            if attempt == 2:
-                break
-            time.sleep(2.0)
-            
-    # --- FALLBACK SU NOMINATIM ---
+    # --- 1. PRIMARIO: NOMINATIM (Cerca insediamenti grandi) ---
     url_nominatim = "https://nominatim.openstreetmap.org/reverse"
     params_nominatim = {"lat": lat, "lon": lon, "format": "json"}
+    
+    for attempt in range(2):
+        try:
+            r = requests.get(url_nominatim, params=params_nominatim, headers=headers, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                address = data.get("address", {})
+                
+                citta = (
+                    address.get("city") 
+                    or address.get("town") 
+                    or address.get("municipality")
+                    or address.get("village")
+                )
+                if citta:
+                    return citta
+        except Exception:
+            time.sleep(1.0)
+            
+    # --- 2. FALLBACK SU PHOTON ---
+    url_photon = "https://photon.komoot.io/reverse"
+    params_photon = {"lat": round(lat, 3), "lon": round(lon, 3), "lang": "default"}
+    
     try:
-        r = requests.get(url_nominatim, params=params_nominatim, headers=headers, timeout=10)
+        r = requests.get(url_photon, params=params_photon, headers=headers, timeout=10)
         if r.status_code == 200:
-            address = r.json().get("address", {})
-            return address.get("city") or address.get("town") or address.get("village") or "Località sconosciuta"
+            data = r.json()
+            features = data.get("features", [])
+            if features:
+                props = features[0]["properties"]
+                return props.get("city") or props.get("town") or props.get("village") or props.get("name") or "Località sconosciuta"
     except Exception:
         pass
 
