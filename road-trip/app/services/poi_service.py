@@ -97,6 +97,11 @@ def mappa_interessi(interessi):
     """
 
     mapping = {
+        # SPORT E DIVERTIMENTO
+        "sport": ["sport", "stadiums"],
+        "musica": ["theatres_and_entertainments", "cultural"],
+        "birra": ["pubs", "foods", "bars"],
+
         # CIBO
         "cibo": ["foods"],
 

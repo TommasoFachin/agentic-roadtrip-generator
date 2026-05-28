@@ -310,7 +310,8 @@ Il tuo compito è selezionare i MIGLIORI 2 eventi (massimo) che potrebbero piace
 REGOLE DI SELEZIONE:
 1. Scegli eventi molto pertinenti agli interessi dell'utente.
 2. Se non ci sono eventi pertinenti, non suggerire nulla (restituisci una lista vuota).
-3. Se ci sono più eventi validi, scegli i 2 più interessanti o diversi tra loro.
+3. SCARTA I SITI SPAZZATURA: ignora aggregatori nazionali (es. italia.it, ticket.it) o liste generiche (es. 'Vacanze in Italia'). Scegli SOLO eventi veri della città.
+4. Se ci sono più eventi validi, scegli i 2 più interessanti o diversi tra loro.
 4. Rispondi SOLO con un JSON valido, senza testo aggiuntivo.
 
 STRUTTURA JSON DA RESTITUIRE:
@@ -461,7 +462,15 @@ Rispondi SOLO con JSON valido:
                     nomi_gia_aggiunti.add(nome_poi)
                     break 
 
-        return poi_finali if poi_finali else lista_poi[:5]
+        # --- FIX SALVAVITA ---
+        # Se l'LLM è stato pigro e ha restituito meno di 5 POI, riempiamo noi fino a 5
+        if len(poi_finali) < 5:
+            for p in lista_poi:
+                if p not in poi_finali:
+                    poi_finali.append(p)
+                if len(poi_finali) == 5:
+                    break
+        return poi_finali
 
     except Exception as e:
         print(f"Errore selezione POI PRO: {e}")

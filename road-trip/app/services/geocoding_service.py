@@ -63,49 +63,52 @@ def geocoding_citta(nome_citta: str) -> tuple[float, float]:
     raise HTTPException(status_code=404, detail=f"Impossibile trovare coordinate per: {nome_citta}")
 
 @lru_cache(maxsize=1024)
-def reverse_geocoding(lat: float, lon: float) -> str:
+def reverse_geocoding(lat: float, lon: float) -> tuple[str, str | None]:
     """
-    Restituisce la città/paese più vicino.
-    Usa Nominatim come primario, filtrando appositamente solo per città,
-    comuni o paesi, ignorando nomi di vie o località sperdute in autostrada.
+    Restituisce una tupla (città/paese, country_code) più vicini.
+    Forza la ricerca su macro-aree (zoom 10 per Città, zoom 12 per Comuni grandi)
+    per evitare di restituire frazioni o paesi sconosciuti a fine tappa.
     """
     headers = {"User-Agent": f"RoadTrip-Tommaso-{int(time.time())}@student.example.com"}
 
-    # --- 1. PRIMARIO: NOMINATIM (Cerca insediamenti grandi) ---
+    # --- 1. PRIMARIO: NOMINATIM (Zoom decrescente espanso) ---
     url_nominatim = "https://nominatim.openstreetmap.org/reverse"
-    params_nominatim = {"lat": lat, "lon": lon, "format": "json"}
     
-    for attempt in range(2):
+    # zoom 10 = City, zoom 12 = Town, zoom 14 = Village/Municipality
+    for zoom in [10, 12, 14]:
+        params_nominatim = {"lat": lat, "lon": lon, "format": "json", "zoom": zoom}
         try:
-            r = requests.get(url_nominatim, params=params_nominatim, headers=headers, timeout=10)
+            r = requests.get(url_nominatim, params=params_nominatim, headers=headers, timeout=5)
             if r.status_code == 200:
                 data = r.json()
                 address = data.get("address", {})
-                
                 citta = (
-                    address.get("city") 
-                    or address.get("town") 
-                    or address.get("municipality")
-                    or address.get("village")
+                    address.get("city") or 
+                    address.get("town") or 
+                    address.get("municipality") or 
+                    address.get("village") or
+                    address.get("county")
                 )
+                country_code = address.get("country_code")
                 if citta:
-                    return citta
+                    return citta, country_code
         except Exception:
-            time.sleep(1.0)
+            time.sleep(0.5)
             
-    # --- 2. FALLBACK SU PHOTON ---
+    # --- 2. FALLBACK SU PHOTON (Reverse geocoding corretto) ---
     url_photon = "https://photon.komoot.io/reverse"
-    params_photon = {"lat": round(lat, 3), "lon": round(lon, 3), "lang": "default"}
-    
+    params_photon = {"lat": round(lat, 3), "lon": round(lon, 3), "limit": 1}
     try:
-        r = requests.get(url_photon, params=params_photon, headers=headers, timeout=10)
+        r = requests.get(url_photon, params=params_photon, headers=headers, timeout=5)
         if r.status_code == 200:
-            data = r.json()
-            features = data.get("features", [])
+            features = r.json().get("features", [])
             if features:
                 props = features[0]["properties"]
-                return props.get("city") or props.get("town") or props.get("village") or props.get("name") or "Località sconosciuta"
+                citta = props.get("city") or props.get("town") or props.get("village") or props.get("county") or props.get("name")
+                country_code = props.get("countrycode")
+                if citta:
+                    return citta, country_code
     except Exception:
         pass
 
-    return "Località sconosciuta"
+    return "In viaggio", None

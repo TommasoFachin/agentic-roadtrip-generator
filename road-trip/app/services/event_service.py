@@ -4,6 +4,64 @@ import requests
 from datetime import datetime
 from app.config import settings
 
+def cerca_eventi_web(citta: str, data: datetime.date, country_code: str | None, interessi: list) -> list:
+    """Effettua una ricerca sul web per trovare eventi usando DuckDuckGo, basati sugli interessi dell'utente."""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        print("   > [Web Search] Modulo 'ddgs' non installato. Esegui: pip install ddgs")
+        return []
+
+    mesi_ita = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", 
+                "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
+    mese_nome = mesi_ita[data.month - 1]
+
+    # Filtriamo interessi che non c'entrano nulla con eventi temporanei
+    esclusioni = ["monumenti", "storia", "architettura", "punti di interesse", "centro città", "natura", "parchi", "città", "paesaggi"]
+    interessi_utili = [i for i in interessi if i.lower() not in esclusioni]
+    interessi_str = " ".join([i.lower() for i in interessi])
+
+    # Costruiamo una query dinamica in base alla nazione per evitare spam SEO italiano all'estero
+    is_italy = country_code and country_code.lower() == 'it'
+    
+    if is_italy:
+        argomenti = " ".join(interessi_utili) if interessi_utili else "sagre festival"
+        query = f"eventi {argomenti} {citta} {mese_nome} {data.year}"
+    else:
+        mese_eng = data.strftime("%B") # Traduce il mese in inglese (es. 'June')
+        query = f"events festivals {citta} {mese_eng} {data.year}"
+        # Aggiungiamo traduzioni manuali dei tuoi interessi chiave
+        if "birra" in interessi_str: query += " beer"
+        if "musica" in interessi_str: query += " music"
+        if "sport" in interessi_str: query += " sport"
+
+    print(f"   > [Web Search] Eseguo query: '{query}'...")
+
+    # --- REGIONE DINAMICA ---
+    # Se abbiamo il codice nazione (es. 'de'), lo usiamo per filtrare la ricerca (es. 'de-de')
+    # Altrimenti, la ricerca è globale.
+    region = None
+    if country_code:
+        region = f"{country_code.lower()}-{country_code.lower()}"
+
+    risultati_web = []
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, region=region, max_results=4))
+            for r in results:
+                risultati_web.append({
+                    "name": r.get("title", "Senza titolo"),
+                    "url": r.get("href", ""),
+                    "classifications": [{
+                        "segment": {"name": "Evento dal Web"},
+                        "genre": {"name": "Interesse Specifico" if interessi_utili else "Generico"}
+                    }]
+                })
+    except Exception as e:
+        print(f"     [Web Search] Errore: {e}")
+        
+    return risultati_web
+
 def mappa_interessi_eventi(interessi: list) -> dict:
     """
     Mappa gli interessi dell'utente a classificazioni e keyword per Ticketmaster.
@@ -55,11 +113,8 @@ def mappa_interessi_eventi(interessi: list) -> dict:
         "keywords": list(keywords_set)
     }
 
-def cerca_eventi(citta: str, data: datetime.date, interessi: list) -> list:
+def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, interessi: list) -> list:
     """Cerca eventi su Ticketmaster per una data città e data, basandosi sugli interessi."""
-    if not settings.TICKETMASTER_API_KEY:
-        print("   > ATTENZIONE: TICKETMASTER_API_KEY non configurata. Salto ricerca eventi.")
-        return []
 
     print(f"   > Ricerca eventi per {citta} il {data}...")
 
@@ -69,40 +124,41 @@ def cerca_eventi(citta: str, data: datetime.date, interessi: list) -> list:
     dati_ricerca = mappa_interessi_eventi(interessi)
     classifications = dati_ricerca["classifications"]
     keywords = dati_ricerca["keywords"]
-
-    params = {
-        "apikey": settings.TICKETMASTER_API_KEY,
-        "city": citta.split(",")[0].strip(),
-        "startDateTime": start_date,
-        "endDateTime": end_date,
-        "sort": "date,asc",
-        "size": 20
-    }
-
-    if classifications:
-        params["classificationName"] = ",".join(classifications)
     
-    # Aggiungiamo le keyword alla ricerca. Ticketmaster le gestisce in OR.
-    if keywords:
-        params["keyword"] = " ".join(keywords)
+    eventi_trovati = []
 
-    url = "https://app.ticketmaster.com/discovery/v2/events.json"
+    if not settings.TICKETMASTER_API_KEY:
+        print("   > ATTENZIONE: TICKETMASTER_API_KEY non configurata. Salto ricerca Ticketmaster.")
+    else:
+        params = {
+            "apikey": settings.TICKETMASTER_API_KEY,
+            "city": citta.split(",")[0].strip(),
+            "startDateTime": start_date,
+            "endDateTime": end_date,
+            "sort": "date,asc",
+            "size": 20
+        }
+        if classifications:
+            params["classificationName"] = ",".join(classifications)
+        if keywords:
+            params["keyword"] = " ".join(keywords)
 
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
-        eventi_trovati = data.get("_embedded", {}).get("events", [])
-        
-        log_msg = f"     Trovati {len(eventi_trovati)} eventi."
-        if classifications or keywords:
-            log_msg += " Parametri usati:"
-            if classifications:
-                log_msg += f" Classificazioni='{', '.join(classifications)}'"
-            if keywords:
-                log_msg += f" Keywords='{' '.join(keywords)}'"
-        print(log_msg)
+        url = "https://app.ticketmaster.com/discovery/v2/events.json"
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            response_data = response.json()
+            eventi_tm = response_data.get("_embedded", {}).get("events", [])
+            eventi_trovati.extend(eventi_tm)
+            
+            log_msg = f"     Trovati {len(eventi_tm)} eventi su Ticketmaster."
+            print(log_msg)
+        except Exception as e:
+            print(f"     Eccezione durante la chiamata a Ticketmaster: {e}")
 
-        return eventi_trovati
-    except Exception as e:
-        print(f"     Eccezione durante la chiamata a Ticketmaster: {e}")
-        return []
+    # INTEGRAZIONE RICERCA WEB
+    # Aggiungiamo i risultati della ricerca web personalizzati in base agli interessi
+    if citta != "In viaggio":
+        eventi_web = cerca_eventi_web(citta, data, country_code, interessi)
+        eventi_trovati.extend(eventi_web)
+
+    return eventi_trovati

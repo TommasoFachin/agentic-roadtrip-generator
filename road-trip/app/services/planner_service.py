@@ -226,7 +226,7 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
 
         # Città/paese della tappa
         print(f"   > Ricerca città di destinazione...")
-        citta_tappa = reverse_geocoding(lat_end, lon_end)
+        citta_tappa, country_code = reverse_geocoding(lat_end, lon_end)
 
         is_last_day = (i == len(tappe) - 1)
         poi_dict = {}
@@ -275,7 +275,7 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
                 for p in risultati:
                     poi_dict[p["name"]] = p
 
-            if citta_tappa and citta_tappa != "Località sconosciuta":
+            if citta_tappa and citta_tappa != "In viaggio":
                 try:
                     lon_f, lat_f = geocoding_citta(citta_tappa)
                     risultati_finale = cerca_poi(lat=lat_f, lon=lon_f, kinds=kinds_base, radius=8000, limit=200)
@@ -293,7 +293,7 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
 
         # --- SELEZIONE EVENTI TRAMITE LLM ---
         # Usa gli interessi generali del profilo utente, non quelli del viaggio specifico
-        lista_eventi = cerca_eventi(citta_tappa, giorno_data, profilo.interessi)
+        lista_eventi = cerca_eventi(citta_tappa, country_code, giorno_data, profilo.interessi)
         eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi)
         
         # Pausa anti-spam per Groq: 12 secondi per permettere la ricarica dei token ed evitare l'errore 429
