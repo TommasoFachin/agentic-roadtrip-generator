@@ -89,8 +89,11 @@ def reverse_geocoding(lat: float, lon: float) -> tuple[str, str | None]:
                     address.get("village") or
                     address.get("county")
                 )
+                country = address.get("country")
                 country_code = address.get("country_code")
                 if citta:
+                    if country:
+                        citta = f"{citta}, {country}"
                     return citta, country_code
         except Exception:
             time.sleep(0.5)
@@ -105,8 +108,11 @@ def reverse_geocoding(lat: float, lon: float) -> tuple[str, str | None]:
             if features:
                 props = features[0]["properties"]
                 citta = props.get("city") or props.get("town") or props.get("village") or props.get("county") or props.get("name")
+                country = props.get("country")
                 country_code = props.get("countrycode")
                 if citta:
+                    if country:
+                        citta = f"{citta}, {country}"
                     return citta, country_code
     except Exception:
         pass

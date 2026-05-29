@@ -3,7 +3,7 @@
 
 from datetime import datetime, timedelta, date
 import asyncio
-from app.models import TripPreferences, Stop, TripPlan, DayPlan
+from app.models import TripPreferences, Stop, TripPlan, DayPlan, TripRequest
 from fastapi import HTTPException
 from app.services.poi_service import cerca_poi, mappa_interessi
 import math
@@ -60,9 +60,11 @@ def get_city_image_url(city_name: str) -> str | None:
     return None
 
 def get_population(city_name):
+    # GeoNames non capisce bene le virgole: usiamo solo il nome della città per la ricerca
+    nome_pulito = city_name.split(",")[0].strip()
     url = "http://api.geonames.org/searchJSON"
     params = {
-        "q": city_name,
+        "q": nome_pulito,
         "maxRows": 1,
         "username": settings.GEONAMES_USERNAME
     }
@@ -92,11 +94,17 @@ def trova_citta_piu_grande_vicina(lat, lon, min_pop=1000):
             for city in data["geonames"]:
                 pop = int(city.get("population", 0))
                 if pop >= min_pop:
-                    return city["name"], float(city["lat"]), float(city["lng"])
+                    nome_completo = city["name"]
+                    if city.get("countryName"):
+                        nome_completo += f", {city['countryName']}"
+                    return nome_completo, float(city["lat"]), float(city["lng"])
             
             # Se nessuna supera la soglia, prendiamo almeno la più grande trovata in zona
             migliore_trovata = max(data["geonames"], key=lambda x: int(x.get("population", 0)))
-            return migliore_trovata["name"], float(migliore_trovata["lat"]), float(migliore_trovata["lng"])
+            nome_completo = migliore_trovata["name"]
+            if migliore_trovata.get("countryName"):
+                nome_completo += f", {migliore_trovata['countryName']}"
+            return nome_completo, float(migliore_trovata["lat"]), float(migliore_trovata["lng"])
     except Exception as e:
         print(f"     Errore GeoNames findNearby: {e}")
 
@@ -175,8 +183,8 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
         punto_arrivo_idx = idx + 1
         is_tappa_obbligatoria = punto_arrivo_idx in tappe_obbligatorie_idx
 
-        # se abbiamo raggiunto la distanza massima o siamo arrivati a una tappa intermedia!
-        if acc_km >= distanza_massima_giornaliera or is_tappa_obbligatoria:
+        # se abbiamo raggiunto la distanza massima o siamo arrivati a una tappa intermedia (evitando micro-tappe < 10km)
+        if acc_km >= distanza_massima_giornaliera or (is_tappa_obbligatoria and acc_km > 10):
             tappa_end = seg["end"]
             tappe.append({
                 "distanza_km": acc_km,
@@ -256,7 +264,7 @@ def punti_lungo_tappa(geometry, start_coord, end_coord, fractions=(1/3, 2/3, 1.0
     return points
 
 # funzione principale che costruisce l'itinerario giorno per giorno, con orari realistici, città di tappa e POI rilevanti lungo la tappa.
-async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_giornaliera: float, data_partenza: date) -> TripPlan:
+async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripPlan:
     """
     Genera un itinerario giorno per giorno basato su:
       - tappe reali lungo il percorso (distanza massima giornaliera)
@@ -269,6 +277,10 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
     distanza_totale = percorso["distanza_km"]
     durata_totale_sec = percorso["durata_sec"]
 
+    # Estrai i parametri dalla richiesta
+    distanza_massima_giornaliera = richiesta.preferenze.distanza_massima_giornaliera
+    data_partenza = richiesta.data_partenza
+
     tappe = costruisci_tappe_reali(percorso, distanza_massima_giornaliera)
     giorni_disponibili = len(tappe)
 
@@ -278,7 +290,7 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
     tempo_extra = 0
 
     # 🔥 Applica il mapping degli interessi PRIMA di cercare i POI
-    interessi_mappati = mappa_interessi(preferenze.interessi)
+    interessi_mappati = mappa_interessi(richiesta.preferenze.interessi)
     kinds_base = interessi_mappati
     
     for i, tappa in enumerate(tappe):
@@ -313,38 +325,41 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
         else:
             tempo_extra = 0
 
-        # Punto di stop della tappa (fine giornata)
-        lat_end, lon_end = tappa["end_coord"]
-
-        # Città/paese della tappa
-        print(f"   > Ricerca città di destinazione...")
-        citta_tappa, country_code = reverse_geocoding(lat_end, lon_end)
-
-        # --- FILTRO: accetta solo città > 1.000 abitanti ---
-        # Impostiamo le coordinate finali di default
-        lat_f, lon_f = lat_end, lon_end
-
-        pop = get_population(citta_tappa)
-
-        if pop < 1000:
-            result = trova_citta_piu_grande_vicina(lat_end, lon_end)
-            if result:
-                alternativa, lat_alt, lon_alt = result
-                pop_alt = get_population(alternativa)
-                if alternativa != citta_tappa:
-                    if pop_alt >= 1000:
-                        print(f"   > {citta_tappa} ha solo {pop} ab. Sostituita con {alternativa} ({pop_alt} ab.).")
-                    else:
-                        print(f"   > {citta_tappa} ha {pop} ab. Sostituita con {alternativa} ({pop_alt} ab.), la più grande in zona.")
-                else:
-                    print(f"   > {citta_tappa} ({pop} ab.) mantenuta: è la più grande nel raggio di 30 km.")
-                citta_tappa = alternativa
-                lat_f, lon_f = lat_alt, lon_alt # Aggiorniamo coordinate con la nuova città!
-            else:
-                print(f"   > Nessuna città >1k trovata vicino a {citta_tappa}. Mantengo quella trovata.")
-
-
         is_last_day = (i == len(tappe) - 1)
+
+        if is_last_day:
+            # ULTIMO GIORNO: Forza la destinazione originale richiesta dall'utente
+            citta_tappa = richiesta.luogo_destinazione
+            lon_f, lat_f = geocoding_citta(citta_tappa)
+            # Per la ricerca eventi, ci serve il country_code
+            _, country_code = reverse_geocoding(lat_f, lon_f)
+        else:
+            # GIORNI INTERMEDI: Logica esistente
+            lat_end, lon_end = tappa["end_coord"]
+            print(f"   > Ricerca città di destinazione...")
+            citta_tappa, country_code = reverse_geocoding(lat_end, lon_end)
+
+            # --- FILTRO: accetta solo città > 1.000 abitanti ---
+            lat_f, lon_f = lat_end, lon_end
+            pop = get_population(citta_tappa)
+
+            if pop < 1000:
+                result = trova_citta_piu_grande_vicina(lat_end, lon_end)
+                if result:
+                    alternativa, lat_alt, lon_alt = result
+                    pop_alt = get_population(alternativa)
+                    if alternativa != citta_tappa:
+                        if pop_alt >= 1000:
+                            print(f"   > {citta_tappa} ha solo {pop} ab. Sostituita con {alternativa} ({pop_alt} ab.).")
+                        else:
+                            print(f"   > {citta_tappa} ha {pop} ab. Sostituita con {alternativa} ({pop_alt} ab.), la più grande in zona.")
+                    else:
+                        print(f"   > {citta_tappa} ({pop} ab.) mantenuta: è la più grande nel raggio di 30 km.")
+                    citta_tappa = alternativa
+                    lat_f, lon_f = lat_alt, lon_alt # Aggiorniamo coordinate con la nuova città!
+                else:
+                    print(f"   > Nessuna città >1k trovata vicino a {citta_tappa}. Mantengo quella trovata.")
+
         poi_dict = {}
         poi_ordinati = []
 
@@ -402,7 +417,7 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
 
         # --- SELEZIONE INTELLIGENTE DEI POI TRAMITE LLM ---
         print(f"   > Analisi e selezione POI tramite LLM (Mistral)... (potrebbe richiedere tempo)")
-        poi = await seleziona_poi_con_llm(poi_ordinati, {"interessi": preferenze.interessi})
+        poi = await seleziona_poi_con_llm(poi_ordinati, {"interessi": richiesta.preferenze.interessi})
 
         # --- SELEZIONE EVENTI TRAMITE LLM ---
         # Usa gli interessi generali del profilo utente, non quelli del viaggio specifico

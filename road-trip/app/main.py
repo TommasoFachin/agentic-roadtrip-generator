@@ -108,12 +108,8 @@ async def genera_itinerario(richiesta: TripRequest):
             "tappe_info": tappe_info,
         }
 
-    itinerario = await costruisci_itinerario(
-        percorso,
-        richiesta.preferenze,
-        distanza_massima,
-        richiesta.data_partenza
-    )
+    # Passiamo l'intera richiesta, che contiene tutte le info necessarie
+    itinerario = await costruisci_itinerario(percorso, richiesta)
 
     documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
 
@@ -146,12 +142,8 @@ async def genera_itinerario_pdf(richiesta: TripRequest):
     if not verifica["fattibile"]:
         raise HTTPException(status_code=400, detail=f"Viaggio non fattibile: {verifica['motivo']}")
 
-    itinerario = await costruisci_itinerario(
-        percorso,
-        richiesta.preferenze,
-        distanza_massima,
-        richiesta.data_partenza
-    )
+    # Passiamo l'intera richiesta, che contiene tutte le info necessarie
+    itinerario = await costruisci_itinerario(percorso, richiesta)
 
     documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
 
