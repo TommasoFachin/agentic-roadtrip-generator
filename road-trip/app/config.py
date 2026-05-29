@@ -6,6 +6,7 @@ from pathlib import Path
 env_path = Path(__file__).resolve().parent.parent / ".env"
 ORS_API_KEY_VALUE = None
 TICKETMASTER_API_KEY_VALUE = None
+GEONAMES_USERNAME_VALUE = "demo"
 
 try:
     with open(env_path, "r", encoding="utf-8") as f:
@@ -14,6 +15,8 @@ try:
                 ORS_API_KEY_VALUE = line.split("=", 1)[1].strip(" '\"\n")
             elif line.strip().startswith("TICKETMASTER_API_KEY"):
                 TICKETMASTER_API_KEY_VALUE = line.split("=", 1)[1].strip(" '\"\n")
+            elif line.strip().startswith("GEONAMES_USERNAME"):
+                GEONAMES_USERNAME_VALUE = line.split("=", 1)[1].strip(" '\"\n")
 except FileNotFoundError:
     pass # La variabile rimarrà None
 
@@ -29,5 +32,6 @@ class Settings:
     project_name: str = "Road Trip API"
     ORS_API_KEY = ORS_API_KEY_VALUE
     TICKETMASTER_API_KEY = TICKETMASTER_API_KEY_VALUE
+    GEONAMES_USERNAME = GEONAMES_USERNAME_VALUE
 
 settings = Settings()

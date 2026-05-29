@@ -4,24 +4,21 @@
 import requests
 from fastapi import HTTPException
 from app.config import settings
+from typing import List, Tuple
 
 ORS_DIRECTIONS_URL = "https://api.openrouteservice.org/v2/directions/driving-car/geojson"
 
 
-def calcola_percorso(start_lon: float, start_lat: float, end_lon: float, end_lat: float) -> dict:
+def calcola_percorso(coordinate_viaggio: List[Tuple[float, float]]) -> dict:
     print(">>> calcola_percorso <<<")
 
-    # ORS richiede [lon, lat] e restituisce geometria in quel formato
     headers = {
         "Authorization": settings.ORS_API_KEY,
         "Content-Type": "application/json"
     }
 
     body = {
-        "coordinates": [
-            [start_lon, start_lat],
-            [end_lon, end_lat]
-        ],
+        "coordinates": [[lon, lat] for lon, lat in coordinate_viaggio],
         "instructions": False,
         "geometry": True 
     }
@@ -57,6 +54,7 @@ def calcola_percorso(start_lon: float, start_lat: float, end_lon: float, end_lat
 
     feature = data["features"][0]
     summary = feature["properties"]["summary"]
+    way_points = feature["properties"].get("way_points", [])
 
     # Geometria corretta (lista di coordinate)
     geometry = feature.get("geometry", {}).get("coordinates", None)
@@ -70,5 +68,6 @@ def calcola_percorso(start_lon: float, start_lat: float, end_lon: float, end_lat
     return {
         "distanza_km": summary["distance"] / 1000,
         "durata_sec": summary["duration"],
-        "geometry": geometry
+        "geometry": geometry,
+        "way_points": way_points
     }

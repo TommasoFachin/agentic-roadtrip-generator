@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import date, datetime
-from typing import List
+from typing import List, Optional
 
 class TripPreferences(BaseModel):
     interessi: List[str]
@@ -12,6 +12,8 @@ class TripRequest(BaseModel):
     data_partenza: date
     data_arrivo: date
     preferenze: TripPreferences
+    tappe_intermedie: Optional[List[str]] = []
+
 
 class Stop(BaseModel):
     nome: str
@@ -31,6 +33,7 @@ class DayPlan(BaseModel):
     poi: list | None = None
     eventi: list | None = None
     citta_tappa: str | None = None
+    immagine_url: str | None = None
 
     
 

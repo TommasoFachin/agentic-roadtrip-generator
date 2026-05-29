@@ -13,11 +13,94 @@ from typing import List, Tuple
 from app.services.geocoding_service import reverse_geocoding, geocoding_citta
 from app.services.user_profile_service import get_user_profile
 from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm
+from app.config import settings
 
 
 class ItineraryNotPossibleError(Exception):
     """Eccezione sollevata quando l'itinerario non è fattibile con le specifiche fornite."""
     pass
+
+def get_city_image_url(city_name: str) -> str | None:
+    """Cerca su Wikipedia l'immagine principale associata alla città."""
+    url = "https://en.wikipedia.org/w/api.php"
+    search_params = {
+        "action": "query",
+        "list": "search",
+        "srsearch": city_name,
+        "format": "json",
+        "utf8": 1,
+        "srlimit": 1
+    }
+    headers = {
+        "User-Agent": "RoadTripApp/1.0 (student-project; email@example.com)"
+    }
+    try:
+        r = requests.get(url, params=search_params, headers=headers, timeout=5)
+        data = r.json()
+        search_results = data.get("query", {}).get("search", [])
+        if not search_results:
+            return None
+        title = search_results[0]["title"]
+        
+        img_params = {
+            "action": "query",
+            "prop": "pageimages",
+            "titles": title,
+            "format": "json",
+            "pithumbsize": 500
+        }
+        r2 = requests.get(url, params=img_params, headers=headers, timeout=5)
+        data2 = r2.json()
+        pages = data2.get("query", {}).get("pages", {})
+        for page_id, page_info in pages.items():
+            if "thumbnail" in page_info:
+                return page_info["thumbnail"]["source"]
+    except Exception as e:
+        print(f"     Errore recupero immagine Wikipedia per {city_name}: {e}")
+    return None
+
+def get_population(city_name):
+    url = "http://api.geonames.org/searchJSON"
+    params = {
+        "q": city_name,
+        "maxRows": 1,
+        "username": settings.GEONAMES_USERNAME
+    }
+    r = requests.get(url, params=params)
+    data = r.json()
+
+    if "geonames" in data and len(data["geonames"]) > 0:
+        return data["geonames"][0].get("population", 0)
+
+    return 0
+
+
+def trova_citta_piu_grande_vicina(lat, lon, min_pop=1000):
+    url = "http://api.geonames.org/findNearbyPlaceNameJSON"
+    params = {
+        "lat": lat,
+        "lng": lon,
+        "radius": 30,
+        "cities": "cities1000",
+        "username": settings.GEONAMES_USERNAME
+    }
+    try:
+        r = requests.get(url, params=params, timeout=5)
+        data = r.json()
+        if "geonames" in data and len(data["geonames"]) > 0:
+            # Cerchiamo la prima città nei risultati che supera DAVVERO la soglia
+            for city in data["geonames"]:
+                pop = int(city.get("population", 0))
+                if pop >= min_pop:
+                    return city["name"], float(city["lat"]), float(city["lng"])
+            
+            # Se nessuna supera la soglia, prendiamo almeno la più grande trovata in zona
+            migliore_trovata = max(data["geonames"], key=lambda x: int(x.get("population", 0)))
+            return migliore_trovata["name"], float(migliore_trovata["lat"]), float(migliore_trovata["lng"])
+    except Exception as e:
+        print(f"     Errore GeoNames findNearby: {e}")
+
+    return None
 
 #funzione per calcolare la distanza geodesica tra 2 cordinate
 def haversine_km(lat1, lon1, lat2, lon2) -> float:
@@ -49,6 +132,11 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
 
     distanza_totale_km = percorso["distanza_km"]
     durata_totale_sec = percorso["durata_sec"]
+    way_points = percorso.get("way_points", [])
+    
+    # way_points contiene gli indici della partenza, tappe intermedie e arrivo.
+    # Estraiamo solo gli indici delle tappe intermedie (escludendo start e end).
+    tappe_obbligatorie_idx = set(way_points[1:-1]) if len(way_points) > 2 else set()
 
     # calcolo distanza di ogni segmento e lista cumulativa
     segmenti = []
@@ -83,8 +171,12 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
         acc_km += d_km
         acc_sec += d_sec
 
-        # se abbiamo raggiunto o superato la distanza massima → chiudiamo tappa
-        if acc_km >= distanza_massima_giornaliera:
+        # Il punto di arrivo di questo segmento corrisponde all'indice idx + 1 nella geometry
+        punto_arrivo_idx = idx + 1
+        is_tappa_obbligatoria = punto_arrivo_idx in tappe_obbligatorie_idx
+
+        # se abbiamo raggiunto la distanza massima o siamo arrivati a una tappa intermedia!
+        if acc_km >= distanza_massima_giornaliera or is_tappa_obbligatoria:
             tappa_end = seg["end"]
             tappe.append({
                 "distanza_km": acc_km,
@@ -228,6 +320,30 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
         print(f"   > Ricerca città di destinazione...")
         citta_tappa, country_code = reverse_geocoding(lat_end, lon_end)
 
+        # --- FILTRO: accetta solo città > 1.000 abitanti ---
+        # Impostiamo le coordinate finali di default
+        lat_f, lon_f = lat_end, lon_end
+
+        pop = get_population(citta_tappa)
+
+        if pop < 1000:
+            result = trova_citta_piu_grande_vicina(lat_end, lon_end)
+            if result:
+                alternativa, lat_alt, lon_alt = result
+                pop_alt = get_population(alternativa)
+                if alternativa != citta_tappa:
+                    if pop_alt >= 1000:
+                        print(f"   > {citta_tappa} ha solo {pop} ab. Sostituita con {alternativa} ({pop_alt} ab.).")
+                    else:
+                        print(f"   > {citta_tappa} ha {pop} ab. Sostituita con {alternativa} ({pop_alt} ab.), la più grande in zona.")
+                else:
+                    print(f"   > {citta_tappa} ({pop} ab.) mantenuta: è la più grande nel raggio di 30 km.")
+                citta_tappa = alternativa
+                lat_f, lon_f = lat_alt, lon_alt # Aggiorniamo coordinate con la nuova città!
+            else:
+                print(f"   > Nessuna città >1k trovata vicino a {citta_tappa}. Mantengo quella trovata.")
+
+
         is_last_day = (i == len(tappe) - 1)
         poi_dict = {}
         poi_ordinati = []
@@ -236,8 +352,6 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
         if is_last_day:
             # ULTIMO GIORNO: Ricerca GRANDE e PULITA solo sulla destinazione finale.
             try:
-                lon_f, lat_f = geocoding_citta(citta_tappa)
-                
                 # 1. Cerchiamo prima solo attrazioni di FAMA MONDIALE (salta le chiesette locali)
                 risultati_finale = cerca_poi(
                     lat=lat_f,
@@ -277,7 +391,6 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
 
             if citta_tappa and citta_tappa != "In viaggio":
                 try:
-                    lon_f, lat_f = geocoding_citta(citta_tappa)
                     risultati_finale = cerca_poi(lat=lat_f, lon=lon_f, kinds=kinds_base, radius=8000, limit=200)
                     for p in risultati_finale:
                         poi_dict[p["name"]] = p
@@ -296,6 +409,11 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
         lista_eventi = cerca_eventi(citta_tappa, country_code, giorno_data, profilo.interessi)
         eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi)
         
+        immagine_url = None
+        if citta_tappa and citta_tappa != "In viaggio":
+            print(f"   > Cerco immagine per {citta_tappa}...")
+            immagine_url = get_city_image_url(citta_tappa)
+        
         # Pausa anti-spam per Groq: 12 secondi per permettere la ricarica dei token ed evitare l'errore 429
         await asyncio.sleep(12)
         print(f"   > Giorno {i + 1} completato con successo!")
@@ -310,7 +428,8 @@ async def costruisci_itinerario(percorso: dict, preferenze, distanza_massima_gio
             note="Orari realistici con pause e limite massimo alle 20:00.",
             poi=poi,
             eventi=eventi,
-            citta_tappa=citta_tappa
+            citta_tappa=citta_tappa,
+            immagine_url=immagine_url
         )
 
         giorni.append(giorno)

@@ -3,6 +3,8 @@
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from io import BytesIO
+from reportlab.lib.utils import ImageReader
+import requests
 
 def genera_pdf_itinerario(itinerario, documento_testuale):
     buffer = BytesIO()
@@ -27,13 +29,30 @@ def genera_pdf_itinerario(itinerario, documento_testuale):
 
     for giorno in itinerario.giorni:
         # Controllo per assicurarci di avere spazio a sufficienza per iniziare un nuovo giorno senza tagliarlo
-        # Alzato a 250 per garantire che l'intestazione e l'inizio dei POI abbiano sempre spazio
-        if y < 250:
+        # Alzato a 300 per garantire spazio anche all'immagine della tappa
+        if y < 300:
             c.showPage()
             y = 800
 
+        start_y_tappa = y
+
         c.setFont("Helvetica-Bold", 12)
         c.drawString(50, y, f"Giorno {giorno.giorno} – {giorno.data}")
+
+        # --- IMMAGINE DELLA TAPPA ---
+        image_drawn = False
+        if getattr(giorno, "immagine_url", None):
+            try:
+                response = requests.get(giorno.immagine_url, timeout=5)
+                if response.status_code == 200:
+                    img = ImageReader(BytesIO(response.content))
+                    img_w, img_h = 200, 130
+                    img_y = y - img_h + 10
+                    c.drawImage(img, 350, img_y, width=img_w, height=img_h, preserveAspectRatio=True, anchor='c', mask='auto')
+                    image_drawn = True
+            except Exception as e:
+                print(f"Errore inserimento immagine per {giorno.citta_tappa}: {e}")
+
         y -= 20
 
         c.setFont("Helvetica", 11)
@@ -95,6 +114,12 @@ def genera_pdf_itinerario(itinerario, documento_testuale):
                 if y < 100:
                     c.showPage()
                     y = 800
+
+        # Evitiamo che il testo del giorno successivo si sovrapponga all'immagine
+        if image_drawn:
+            min_y = start_y_tappa - 140
+            if y > min_y:
+                y = min_y
 
         y -= 20
 

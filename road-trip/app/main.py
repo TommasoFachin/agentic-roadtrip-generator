@@ -13,6 +13,7 @@ from app.services.planner_service import (
     calcola_tappe,
     verifica_fattibilita_viaggio
 )
+from app.services.user_profile_service import get_user_profile, update_user_profile
 
 #modello per l'endpoint interpreta-richiesta, che riceve un testo e restituisce un JSON strutturato secondo TripRequest
 class InterpretationRequest(BaseModel):
@@ -29,15 +30,48 @@ async def interpreta(payload: InterpretationRequest):
 #utility pe rpreparare i dati del viaggio
 def _prepara_dati_viaggio(richiesta: TripRequest):
 
+    profilo = get_user_profile()
+
     # Geocoding: converte citta in coordinate
     coord_start = geocoding_citta(richiesta.luogo_partenza)
     coord_end = geocoding_citta(richiesta.luogo_destinazione)
 
-    lon_start, lat_start = coord_start
-    lon_end, lat_end = coord_end
+    # Costruiamo la lista di tutte le coordinate (partenza -> tappe -> destinazione)
+    coordinate_percorso = [coord_start]
+    
+    tappe_unite = []
+    nomi_tappe_visti = set()
+    
+    # Salviamo i nomi base di partenza e arrivo per non metterli in mezzo
+    start_name = richiesta.luogo_partenza.split(',')[0].strip().lower()
+    end_name = richiesta.luogo_destinazione.split(',')[0].strip().lower()
+    nomi_tappe_visti.add(start_name)
+    nomi_tappe_visti.add(end_name)
+
+    def aggiungi_tappa(tappa):
+        nome = tappa.split(',')[0].strip().lower()
+        if nome not in nomi_tappe_visti:
+            tappe_unite.append(tappa)
+            nomi_tappe_visti.add(nome)
+
+    if richiesta.tappe_intermedie:
+        for t in richiesta.tappe_intermedie:
+            aggiungi_tappa(t)
+    if profilo.tappe_obbligatorie:
+        for t in profilo.tappe_obbligatorie:
+            aggiungi_tappa(t)
+                
+    for tappa in tappe_unite:
+        try:
+            coord_tappa = geocoding_citta(tappa)
+            coordinate_percorso.append(coord_tappa)
+        except Exception as e:
+            print(f"Errore geocoding tappa intermedia {tappa}: {e}")
+                
+    coordinate_percorso.append(coord_end)
 
     # Routing: distanza reale + durata
-    percorso = calcola_percorso(lon_start, lat_start, lon_end, lat_end)
+    percorso = calcola_percorso(coordinate_percorso)
 
     # STEP 3.1 — Calcolo tappe in base ai km/giorno
     distanza_massima = richiesta.preferenze.distanza_massima_giornaliera
@@ -89,6 +123,14 @@ async def genera_itinerario(richiesta: TripRequest):
     with open("itinerario_generato.pdf", "wb") as f:
         f.write(pdf_buffer.getvalue())
 
+    # --- PULIZIA PROFILO (MANTIENI INTERESSI) ---
+    profilo = get_user_profile()
+    profilo_dict = profilo.model_dump()
+    profilo_dict["tappe_obbligatorie"] = []
+    profilo_dict["preferenze_viaggio"] = []
+    profilo_dict["preferenze_cibo"] = []
+    update_user_profile(profilo_dict)
+
     return {
         "tappe_info": tappe_info,
         "verifica": verifica,
@@ -115,6 +157,14 @@ async def genera_itinerario_pdf(richiesta: TripRequest):
 
     # --- GENERAZIONE PDF ---
     pdf_buffer = genera_pdf_itinerario(itinerario, documento)
+
+    # --- PULIZIA PROFILO (MANTIENI INTERESSI) ---
+    profilo = get_user_profile()
+    profilo_dict = profilo.model_dump()
+    profilo_dict["tappe_obbligatorie"] = []
+    profilo_dict["preferenze_viaggio"] = []
+    profilo_dict["preferenze_cibo"] = []
+    update_user_profile(profilo_dict)
 
     return StreamingResponse(
         pdf_buffer,

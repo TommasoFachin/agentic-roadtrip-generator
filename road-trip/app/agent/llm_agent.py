@@ -12,6 +12,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from openai import AsyncOpenAI
 from app.models import TripRequest
+from datetime import datetime
 
 # ---------------------------------------------------------
 # AGENTE 1 — INTERPRETAZIONE RICHIESTE DI VIAGGIO
@@ -25,6 +26,7 @@ Devi restituire ESCLUSIVAMENTE un JSON valido che rispetta ESATTAMENTE questo sc
 {
   "luogo_partenza": "string",
   "luogo_destinazione": "string",
+  "tappe_intermedie": ["string"],
   "data_partenza": "YYYY-MM-DD",
   "data_arrivo": "YYYY-MM-DD",
   "preferenze": {
@@ -40,6 +42,8 @@ REGOLE IMPORTANTI:
 - Non aggiungere commenti.
 - Non aggiungere campi extra.
 - IMPORTANTE: Per i luoghi di partenza e destinazione, inserisci sempre anche la Nazione per evitare ambiguità geografiche (es. "Modena, Italia", "Parigi, Francia").
+- IMPORTANTE: Se l'utente menziona città in cui vuole passare, inseriscile nell'array "tappe_intermedie".
+- IMPORTANTE: Tieni conto della data di oggi per stabilire l'anno corretto se non viene specificato.
 - IMPORTANTE: Traduci e restituisci gli "interessi" SEMPRE IN ITALIANO (es. "città", "storia", "natura", "cibo").
 """
 
@@ -100,7 +104,7 @@ REGOLE:
    - interessi (lista, es: arte, natura, storia, monumenti, architettura, punti di interesse)
    - preferenze_viaggio (lista, es: date del viaggio, limite km giornalieri)
    - preferenze_cibo (lista)
-   - tappe_obbligatorie (lista di città)
+   - tappe_obbligatorie (lista di stringhe contenenti SOLO i nomi esatti delle città, es: ["Strasburgo", "Milano"])
 
 2) Ignora saluti e frasi generiche. Se non ci sono informazioni utili usa "aggiornamenti": {}
 
@@ -165,9 +169,13 @@ async def genera_risposta_naturale(messaggio: str) -> str:
 async def interpreta_richiesta(testo: str) -> TripRequest:
     print(">>> AGENTE VIAGGIO ATTIVO <<<")
 
+    # Diamo all'LLM la data di oggi per ancorarlo nel tempo reale
+    oggi = datetime.now().strftime("%Y-%m-%d")
+    testo_arricchito = f"DATA DI OGGI: {oggi}\nRICHIESTA UTENTE: {testo}"
+
     try:
         # Aggiunto timeout di 20 secondi
-        result = await asyncio.wait_for(llm_viaggio.run(testo), timeout=20.0)
+        result = await asyncio.wait_for(llm_viaggio.run(testo_arricchito), timeout=20.0)
         # Estraiamo l'output reale gestendo retrocompatibilità (output vs data in pydantic_ai)
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
