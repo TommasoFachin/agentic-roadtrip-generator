@@ -32,7 +32,7 @@ def get_city_image_url(city_name: str) -> str | None:
         "srlimit": 1
     }
     headers = {
-        "User-Agent": "RoadTripApp/1.0 (student-project; email@example.com)"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
     try:
         r = requests.get(url, params=search_params, headers=headers, timeout=5)
