@@ -429,8 +429,8 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             print(f"   > Cerco immagine per {citta_tappa}...")
             immagine_url = get_city_image_url(citta_tappa)
         
-        # Pausa anti-spam per Groq: 12 secondi per permettere la ricarica dei token ed evitare l'errore 429
-        await asyncio.sleep(12)
+        # Pausa anti-spam per Groq: 16 secondi per permettere la ricarica dei token ed evitare l'errore 429 (Rate Limit)
+        await asyncio.sleep(16)
         print(f"   > Giorno {i + 1} completato con successo!")
 
         giorno = DayPlan(
