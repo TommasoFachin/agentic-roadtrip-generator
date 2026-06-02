@@ -26,12 +26,13 @@ Devi restituire ESCLUSIVAMENTE un JSON valido che rispetta ESATTAMENTE questo sc
 {
   "luogo_partenza": "string",
   "luogo_destinazione": "string",
-  "tappe_intermedie": ["string"],
+  "tappe_intermedie": [],
   "data_partenza": "YYYY-MM-DD",
   "data_arrivo": "YYYY-MM-DD",
   "preferenze": {
     "distanza_massima_giornaliera": 0,
-    "interessi": ["string", "string"....ecc]
+    "interessi_poi": ["string", "string"....ecc],
+    "interessi_eventi": ["string", "string"....ecc]
   }
 }
 
@@ -42,9 +43,10 @@ REGOLE IMPORTANTI:
 - Non aggiungere commenti.
 - Non aggiungere campi extra.
 - IMPORTANTE: Per i luoghi di partenza e destinazione, inserisci sempre anche la Nazione per evitare ambiguità geografiche (es. "Modena, Italia", "Parigi, Francia").
-- IMPORTANTE: Se l'utente menziona città in cui vuole passare, inseriscile nell'array "tappe_intermedie".
+- IMPORTANTE: Inserisci città in "tappe_intermedie" SOLO E SOLTANTO SE l'utente le ha esplicitamente richieste. ALTRIMENTI, DEVI lasciare l'array vuoto []. NON inventare mai tappe che l'utente non ha nominato!
 - IMPORTANTE: Tieni conto della data di oggi per stabilire l'anno corretto se non viene specificato.
-- IMPORTANTE: Traduci e restituisci gli "interessi" SEMPRE IN ITALIANO (es. "città", "storia", "natura", "cibo").
+- IMPORTANTE: Traduci e restituisci gli "interessi_poi" e "interessi_eventi" SEMPRE IN ITALIANO (es. "città", "storia", "natura", "cibo").
+- IMPORTANTE: Distingui chiaramente cosa visitare di giorno (interessi_poi come musei, piazze, natura) e cosa fare la sera (interessi_eventi come concerti, sport, festival).
 """
 
 # Forziamo le variabili globali in modo che PydanticAI usi Groq di default
@@ -101,7 +103,8 @@ DEVI SEMPRE restituire un JSON con questa struttura:
 REGOLE:
 
 1) "aggiornamenti" deve contenere SOLO informazioni utili al profilo. Usa SOLO queste chiavi:
-   - interessi (lista, es: arte, natura, storia, monumenti, architettura, punti di interesse)
+   - interessi_poi (lista, es: arte, natura, storia, monumenti, architettura, punti di interesse)
+   - interessi_eventi (lista, es: musica, sport, sagre, birra, teatro)
    - preferenze_viaggio (lista, es: date del viaggio, limite km giornalieri)
    - preferenze_cibo (lista)
    - tappe_obbligatorie (lista di stringhe contenenti SOLO i nomi esatti delle città, es: ["Strasburgo", "Milano"])
@@ -270,30 +273,71 @@ Messaggio dell'utente:
 # ---------------------------------------------------------
 
 PROMPT_POI_PRO = """
-Sei un selezionatore intelligente di punti di interesse (POI).
+Sei un selezionatore professionale di punti di interesse (POI) per itinerari di viaggio.
 
 Riceverai:
 - gli interessi dell’utente
-- una lista di POI con nome, categorie, rating, distanza e coordinate
+- una lista di POI trovati tramite OpenTripMap (che può essere incompleta)
+- nome, categoria e rating di ogni POI
 
-Il tuo compito è selezionare i MIGLIORI 5 POI secondo queste regole:
+Il tuo compito è selezionare i MIGLIORI 5 POI, seguendo queste regole fondamentali:
 
-REGOLE DI SELEZIONE:
-1. Scegli POI coerenti con gli interessi dell’utente.
-2. Dai priorità ASSOLUTA ai POI di fama MONDIALE o NAZIONALE (es. Torre Eiffel, Muro di Berlino, Colosseo). Cercali attivamente!
-3. Evita POI troppo simili tra loro (es. 5 castelli identici).
-4. Evita POI con rating basso se ci sono alternative migliori.
-5. Se ci sono meno di 5 POI validi, restituisci tutti quelli disponibili.
-6. Rispondi SOLO con JSON valido, senza testo aggiuntivo.
+────────────────────────────────────────
+1) LANDMARK ICONICI (PRIORITÀ ASSOLUTA)
+────────────────────────────────────────
+Se la città è famosa, DEVI includere i suoi landmark iconici, ANCHE SE NON SONO PRESENTI nella lista fornita.
 
-STRUTTURA JSON DA RESTITUIRE:
+Esempi:
+- Berlino → Muro di Berlino, Porta di Brandeburgo, Reichstag, East Side Gallery
+- Parigi → Torre Eiffel, Louvre, Notre Dame, Arco di Trionfo
+- Roma → Colosseo, Fontana di Trevi, Pantheon
+- Londra → Big Ben, Tower Bridge, British Museum
+- Praga → Ponte Carlo, Castello di Praga, Piazza della Città Vecchia
+ecc.ecc.
+Se mancano nella lista, AGGIUNGILI tu manualmente.
+
+────────────────────────────────────────
+2) COERENZA CON GLI INTERESSI
+────────────────────────────────────────
+Scegli POI che corrispondono agli interessi dell’utente.
+Se l’utente ama:
+- storia → monumenti, musei storici, siti archeologici
+- natura → parchi, giardini, panorami
+- architettura → edifici iconici, piazze, cattedrali
+- arte → musei, gallerie, street art
+
+────────────────────────────────────────
+3) QUALITÀ E VARIETÀ
+────────────────────────────────────────
+- Preferisci POI con rating più alto.
+- Evita POI troppo simili tra loro (es. 5 chiese).
+- Preferisci POI famosi o significativi rispetto a POI minori.
+
+────────────────────────────────────────
+4) QUANDO LA LISTA È SCARSA
+────────────────────────────────────────
+Se i POI forniti sono pochi o irrilevanti:
+- completa la lista con POI iconici della città
+- aggiungi POI famosi usando la tua conoscenza generale
+
+────────────────────────────────────────
+5) OUTPUT
+────────────────────────────────────────
+Rispondi SOLO con JSON valido:
+
 {
   "poi_selezionati": [
     {"nome": "Nome POI 1"},
-    {"nome": "Nome POI 2"}
+    {"nome": "Nome POI 2"},
+    {"nome": "Nome POI 3"},
+    {"nome": "Nome POI 4"},
+    {"nome": "Nome POI 5"}
   ]
 }
-IMPORTANTE: Assicurati che il JSON sia formattato correttamente, senza virgole alla fine dell'ultimo elemento della lista.
+
+NON aggiungere testo fuori dal JSON.
+NON aggiungere commenti.
+NON lasciare virgole finali.
 """
 
 llm_poi = Agent(
@@ -337,13 +381,12 @@ llm_eventi = Agent(
     instructions=PROMPT_EVENTI
 )
 
-async def seleziona_eventi_con_llm(lista_eventi: list, interessi: list) -> list:
+async def seleziona_eventi_con_llm(lista_eventi: list, interessi_eventi: list) -> list:
     if not lista_eventi:
         return []
 
     print("   > Analisi e selezione Eventi tramite LLM...")
 
-    interessi_eventi = [i for i in interessi if i.lower() not in ["monumenti", "storia", "architettura", "punti di interesse", "centro città"]]
     if not interessi_eventi:
         print("     Nessun interesse pertinente per gli eventi trovato nel profilo. Salto selezione.")
         return []
@@ -362,7 +405,7 @@ async def seleziona_eventi_con_llm(lista_eventi: list, interessi: list) -> list:
         })
 
     prompt = f"""
-Interessi utente: {interessi_eventi}
+Interessi utente per gli eventi: {interessi_eventi}
 
 Lista eventi disponibili:
 {json.dumps(eventi_compatti, ensure_ascii=False)}
@@ -386,12 +429,12 @@ Rispondi SOLO con JSON valido.
         print(f"     Errore selezione Eventi: {e}")
         return []
 
-async def seleziona_poi_con_llm(lista_poi: list, profilo: dict) -> list:
+async def seleziona_poi_con_llm(lista_poi: list, profilo: dict, citta_tappa: str) -> list:
     if not lista_poi:
         return []
 
     # Pre-filtro: ridotto a 40 per risparmiare Token. I monumenti famosi sono già in cima grazie al min_rate="3"!
-    lista_poi = lista_poi[:40]
+    lista_poi = lista_poi[:100]
 
     poi_compatti = []
 
@@ -408,16 +451,24 @@ async def seleziona_poi_con_llm(lista_poi: list, profilo: dict) -> list:
         })
 
     # FILTRO SALVAVITA: Rimuove i dati "sporchi" che confondono l'AI (es. "limite km: 250")
-    interessi_raw = profilo.get("interessi", [])
+    interessi_raw = profilo.get("interessi_poi", [])
     interessi = [i for i in interessi_raw if "limite" not in i.lower() and "data" not in i.lower()]
     if not interessi:
         interessi = ["storia", "monumenti", "cultura", "luoghi iconici"]
 
     prompt = f"""
-Interessi utente: {interessi}
+Città attuale: {citta_tappa}
+
+Interessi utente per i luoghi da visitare: {interessi}
 
 Lista POI disponibili (n=nome, c=categoria, r=rating):
 {json.dumps(poi_compatti, ensure_ascii=False)}
+
+IMPORTANTE:
+- Aggiungi landmark iconici SOLO se la città è famosa (es. Berlino, Parigi, Roma, Londra, Tokyo).
+- Se la città NON è famosa o non la riconosci, NON aggiungere landmark iconici inventati.
+- Usa SOLO i POI presenti nella lista per le città non famose.
+- Esempi per Berlino: Muro di Berlino, Porta di Brandeburgo, Reichstag, East Side Gallery, Museum Island.
 
 Seleziona i 5 migliori POI secondo le regole.
 Rispondi SOLO con JSON valido:
@@ -427,6 +478,8 @@ Rispondi SOLO con JSON valido:
   ]
 }}
 """
+
+
 
     try:
         result = await asyncio.wait_for(llm_poi.run(prompt), timeout=30.0)
@@ -463,12 +516,27 @@ Rispondi SOLO con JSON valido:
             nome_poi = sel.get("nome")
             if not nome_poi or nome_poi in nomi_gia_aggiunti:
                 continue
-            
+
+            # 1) Se il POI esiste in OpenTripMap → usa quello
+            trovato = False
             for p in lista_poi:
                 if p.get("name") == nome_poi:
                     poi_finali.append(p)
-                    nomi_gia_aggiunti.add(nome_poi)
-                    break 
+                    trovato = True
+                    break
+
+            # 2) Se NON esiste → aggiungi POI “virtuale” (landmark iconico)
+            if not trovato:
+                poi_finali.append({
+                    "name": nome_poi,
+                    "kind": "iconic",
+                    "rate": 10,
+                    "lat": None,
+                    "lon": None
+                })
+
+            nomi_gia_aggiunti.add(nome_poi)
+ 
 
         # --- FIX SALVAVITA ---
         # Se l'LLM è stato pigro e ha restituito meno di 5 POI, riempiamo noi fino a 5

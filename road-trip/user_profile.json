@@ -1,1 +1,1 @@
-{"_default": {"1": {"interessi": ["musei", "luoghi di interesse", "storia", "citt\u00e0", "punti di interesse", "architettura", "arte", "centri citt\u00e0", "sport", "monumenti", "natura", "musica"], "preferenze_viaggio": [], "preferenze_cibo": [], "tappe_obbligatorie": []}}}
+{"_default": {"1": {"interessi_poi": ["punto di interesse", "musei", "punti di interesse", "monumenti", "centri citt\u00e0"], "interessi_eventi": ["musica", "sport"], "preferenze_viaggio": [], "preferenze_cibo": [], "tappe_obbligatorie": []}}}

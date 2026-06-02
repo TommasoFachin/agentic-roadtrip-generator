@@ -4,7 +4,7 @@ import requests
 from datetime import datetime
 from app.config import settings
 
-def cerca_eventi_web(citta: str, data: datetime.date, country_code: str | None, interessi: list) -> list:
+def cerca_eventi_web(citta: str, data: datetime.date, country_code: str | None, interessi_eventi: list) -> list:
     """Effettua una ricerca sul web per trovare eventi usando DuckDuckGo, basati sugli interessi dell'utente."""
     try:
         from ddgs import DDGS
@@ -16,10 +16,8 @@ def cerca_eventi_web(citta: str, data: datetime.date, country_code: str | None, 
                 "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
     mese_nome = mesi_ita[data.month - 1]
 
-    # Filtriamo interessi che non c'entrano nulla con eventi temporanei
-    esclusioni = ["monumenti", "storia", "architettura", "punti di interesse", "centro città", "natura", "parchi", "città", "paesaggi"]
-    interessi_utili = [i for i in interessi if i.lower() not in esclusioni]
-    interessi_str = " ".join([i.lower() for i in interessi])
+    interessi_utili = interessi_eventi
+    interessi_str = " ".join([i.lower() for i in interessi_eventi])
 
     # Costruiamo una query dinamica in base alla nazione per evitare spam SEO italiano all'estero
     is_italy = country_code and country_code.lower() == 'it'
@@ -62,7 +60,7 @@ def cerca_eventi_web(citta: str, data: datetime.date, country_code: str | None, 
         
     return risultati_web
 
-def mappa_interessi_eventi(interessi: list) -> dict:
+def mappa_interessi_eventi(interessi_eventi: list) -> dict:
     """
     Mappa gli interessi dell'utente a classificazioni e keyword per Ticketmaster.
     Restituisce un dizionario con 'classifications' e 'keywords'.
@@ -92,7 +90,7 @@ def mappa_interessi_eventi(interessi: list) -> dict:
     classifications = set()
     keywords_set = set()
 
-    for interesse in interessi:
+    for interesse in interessi_eventi:
         interesse_lower = interesse.lower().strip()
         
         # 1. Cerca nelle classificazioni
@@ -104,16 +102,14 @@ def mappa_interessi_eventi(interessi: list) -> dict:
             keywords_set.update(keywords_map[interesse_lower].split())
         # 3. Se non è una classificazione, usalo come keyword generica
         elif interesse_lower not in mapping_classificazioni:
-            # Filtriamo interessi non pertinenti per eventi (es. 'storia')
-            if interesse_lower not in ["monumenti", "storia", "architettura", "punti di interesse", "centro città"]:
-                keywords_set.add(interesse_lower)
+            keywords_set.add(interesse_lower)
 
     return {
         "classifications": list(classifications),
         "keywords": list(keywords_set)
     }
 
-def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, interessi: list) -> list:
+def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, interessi_eventi: list) -> list:
     """Cerca eventi su Ticketmaster per una data città e data, basandosi sugli interessi."""
 
     print(f"   > Ricerca eventi per {citta} il {data}...")
@@ -121,7 +117,7 @@ def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, inte
     start_date = datetime.combine(data, datetime.min.time()).strftime('%Y-%m-%dT%H:%M:%SZ')
     end_date = datetime.combine(data, datetime.max.time()).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    dati_ricerca = mappa_interessi_eventi(interessi)
+    dati_ricerca = mappa_interessi_eventi(interessi_eventi)
     classifications = dati_ricerca["classifications"]
     keywords = dati_ricerca["keywords"]
     
@@ -158,7 +154,7 @@ def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, inte
     # INTEGRAZIONE RICERCA WEB
     # Aggiungiamo i risultati della ricerca web personalizzati in base agli interessi
     if citta != "In viaggio":
-        eventi_web = cerca_eventi_web(citta, data, country_code, interessi)
+        eventi_web = cerca_eventi_web(citta, data, country_code, interessi_eventi)
         eventi_trovati.extend(eventi_web)
 
     return eventi_trovati

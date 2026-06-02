@@ -89,7 +89,7 @@ def cerca_poi(lat, lon, radius=30000, kinds=None, limit=100, min_rate=None):
 
 # funzione che mappa gli interessi dell’utente alle categorie di OpenTripMap, 
 # restituendo una lista di categorie da usare nella ricerca dei POI.
-def mappa_interessi(interessi):
+def mappa_interessi(interessi_poi):
     """
     Mappa gli interessi dell’utente alle categorie OpenTripMap.
     Versione PRO: supporta interessi in italiano e restituisce kinds utili
@@ -170,13 +170,13 @@ def mappa_interessi(interessi):
     }
 
     kinds = []
-    for interesse in interessi:
+    for interesse in interessi_poi:
         interesse_lower = interesse.lower().strip()
         if interesse_lower in mapping:
             kinds.extend(mapping[interesse_lower])
 
     # fallback intelligente se l’utente mette qualcosa di non mappato
-    if not kinds and interessi:
+    if not kinds and interessi_poi:
         kinds = [
             "historic",
             "monuments_and_memorials",

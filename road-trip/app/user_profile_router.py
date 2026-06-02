@@ -19,13 +19,15 @@ def _normalizza_aggiornamenti(agg):
     Converte campi annidati come:
     {
       "preferenze": {
-         "interessi": [...],
+         "interessi_poi": [...],
+         "interessi_eventi": [...],
          "stile_viaggio": "economico"
       }
     }
     in:
     {
-      "interessi": [...],
+      "interessi_poi": [...],
+      "interessi_eventi": [...],
       "stile_viaggio": "economico"
     }
     """
@@ -61,9 +63,11 @@ async def chatbot_messaggio(payload: ChatbotMessage):
 
     aggiornamenti = _normalizza_aggiornamenti(aggiornamenti)
 
-    # 🔥 FIX 1: se "interessi" è un dict (errore dell'LLM), ignoralo
-    if "interessi" in aggiornamenti and isinstance(aggiornamenti["interessi"], dict):
-        aggiornamenti["interessi"] = []
+    # 🔥 FIX 1: se le liste sono un dict (errore dell'LLM), ignorale
+    if "interessi_poi" in aggiornamenti and isinstance(aggiornamenti["interessi_poi"], dict):
+        aggiornamenti["interessi_poi"] = []
+    if "interessi_eventi" in aggiornamenti and isinstance(aggiornamenti["interessi_eventi"], dict):
+        aggiornamenti["interessi_eventi"] = []
 
     if aggiornamenti:
         # prendi il profilo attuale come dict
@@ -71,7 +75,7 @@ async def chatbot_messaggio(payload: ChatbotMessage):
 
 
         # MERGE AUTOMATICO PER TUTTE LE LISTE
-        for campo in ["interessi", "preferenze_viaggio", "preferenze_cibo", "tappe_obbligatorie"]:
+        for campo in ["interessi_poi", "interessi_eventi", "preferenze_viaggio", "preferenze_cibo", "tappe_obbligatorie"]:
             if campo in aggiornamenti:
                 esistenti = set(profilo_dict.get(campo, []))
                 

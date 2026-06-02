@@ -3,7 +3,8 @@ from datetime import date, datetime
 from typing import List, Optional
 
 class TripPreferences(BaseModel):
-    interessi: List[str]
+    interessi_poi: List[str] = []
+    interessi_eventi: List[str] = []
     distanza_massima_giornaliera: float
 
 class TripRequest(BaseModel):
@@ -43,7 +44,8 @@ class TripPlan(BaseModel):
     giorni: List[DayPlan]
 
 class UserProfile(BaseModel):
-    interessi: list[str] = []
+    interessi_poi: list[str] = []
+    interessi_eventi: list[str] = []
     preferenze_viaggio: list[str] = []
     preferenze_cibo: list[str] = []
     tappe_obbligatorie: list[str] = []

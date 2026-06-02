@@ -290,7 +290,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
     tempo_extra = 0
 
     # 🔥 Applica il mapping degli interessi PRIMA di cercare i POI
-    interessi_mappati = mappa_interessi(richiesta.preferenze.interessi)
+    interessi_mappati = mappa_interessi(richiesta.preferenze.interessi_poi)
     kinds_base = interessi_mappati
     
     for i, tappa in enumerate(tappe):
@@ -417,12 +417,16 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
 
         # --- SELEZIONE INTELLIGENTE DEI POI TRAMITE LLM ---
         print(f"   > Analisi e selezione POI tramite LLM (Mistral)... (potrebbe richiedere tempo)")
-        poi = await seleziona_poi_con_llm(poi_ordinati, {"interessi": richiesta.preferenze.interessi})
+        poi = await seleziona_poi_con_llm(
+            poi_ordinati,
+            {"interessi_poi": richiesta.preferenze.interessi_poi},
+            citta_tappa
+        )
 
         # --- SELEZIONE EVENTI TRAMITE LLM ---
         # Usa gli interessi generali del profilo utente, non quelli del viaggio specifico
-        lista_eventi = cerca_eventi(citta_tappa, country_code, giorno_data, profilo.interessi)
-        eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi)
+        lista_eventi = cerca_eventi(citta_tappa, country_code, giorno_data, profilo.interessi_eventi)
+        eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi_eventi)
         
         immagine_url = None
         if citta_tappa and citta_tappa != "In viaggio":
