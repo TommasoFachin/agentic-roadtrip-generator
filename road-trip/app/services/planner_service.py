@@ -14,49 +14,158 @@ from app.services.geocoding_service import reverse_geocoding, geocoding_citta
 from app.services.user_profile_service import get_user_profile
 from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm
 from app.config import settings
+import aiohttp
 
 
 class ItineraryNotPossibleError(Exception):
     """Eccezione sollevata quando l'itinerario non è fattibile con le specifiche fornite."""
     pass
 
-def get_city_image_url(city_name: str) -> str | None:
-    """Cerca su Wikipedia l'immagine principale associata alla città."""
-    url = "https://en.wikipedia.org/w/api.php"
-    search_params = {
-        "action": "query",
-        "list": "search",
-        "srsearch": city_name,
-        "format": "json",
-        "utf8": 1,
-        "srlimit": 1
-    }
+async def cerca_immagine_citta(citta: str) -> str | None:
+    """
+    Cerca un'immagine reale della città usando:
+    1) ricerca Wikipedia per trovare la pagina corretta
+    2) estrazione dell'immagine principale della pagina
+    3) filtro per evitare bandiere, stemmi, mappe, politici
+    """
+
+    # Ritardo di 1 secondo per non far scattare il blocco 429 di Wikipedia
+    await asyncio.sleep(1)
+
+    blacklist = ["flag", "coat of arms", "logo", "map", "politician", "parliament", "emblem", "seal", "symbol", "signature", "handshake", "summit", "collage"]
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        "User-Agent": "RoadTripAcademicApp/1.0 (mailto:student@university.local)"
     }
-    try:
-        r = requests.get(url, params=search_params, headers=headers, timeout=5)
-        data = r.json()
-        search_results = data.get("query", {}).get("search", [])
-        if not search_results:
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+
+        # 1️⃣ CERCA LA PAGINA DELLA CITTÀ
+        # Cerchiamo solo il nome della città per evitare che la nazione confonda Wikipedia EN
+        search_term = citta.split(",")[0].strip()
+        search_url = "https://en.wikipedia.org/w/api.php"
+        search_params = {
+            "action": "query",
+            "list": "search",
+            "format": "json",
+            "srsearch": search_term
+        }
+
+
+
+        try:
+            async with session.get(search_url, params=search_params) as resp:
+                data = await resp.json()
+
+            results = data.get("query", {}).get("search", [])
+            if not results:
+                return None
+
+            # Prendi il titolo della pagina più rilevante
+            title = results[0]["title"]
+
+        except Exception as e:
+            print(f"     [Wikipedia API] Errore ricerca pagina per {citta}: {e}")
             return None
-        title = search_results[0]["title"]
-        
-        img_params = {
+
+        # 2️⃣ OTTIENI L'IMMAGINE PRINCIPALE DELLA PAGINA
+        image_url = "https://en.wikipedia.org/w/api.php"
+        image_params = {
             "action": "query",
             "prop": "pageimages",
-            "titles": title,
             "format": "json",
-            "pithumbsize": 500
+            "piprop": "thumbnail",
+            "pithumbsize": 600,
+            "titles": title
         }
-        r2 = requests.get(url, params=img_params, headers=headers, timeout=5)
-        data2 = r2.json()
-        pages = data2.get("query", {}).get("pages", {})
-        for page_id, page_info in pages.items():
-            if "thumbnail" in page_info:
-                return page_info["thumbnail"]["source"]
-    except Exception as e:
-        print(f"     Errore recupero immagine Wikipedia per {city_name}: {e}")
+
+        try:
+            async with session.get(image_url, params=image_params) as resp:
+                data = await resp.json()
+
+            pages = data.get("query", {}).get("pages", {})
+            for _, page in pages.items():
+                img = page.get("thumbnail", {}).get("source")
+                if not img:
+                    continue
+
+                # 3️⃣ FILTRO ANTI-IMMAGINI SBAGLIATE
+                if any(bad in img.lower() for bad in blacklist):
+                    continue
+
+                return img
+
+        except Exception as e:
+            print(f"     [Wikipedia API] Errore ricerca immagine per {title}: {e}")
+            return None
+
+    return None
+
+async def cerca_immagine_poi_wikipedia(nome_poi: str) -> str | None:
+    """
+    Cerca l'immagine principale (non thumbnail) di un POI iconico su Wikipedia.
+    Funziona per qualsiasi monumento famoso.
+    """
+    url = "https://en.wikipedia.org/w/api.php"
+    headers = {"User-Agent": "RoadTripApp/1.0"}
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+
+        # 1. Cerca la pagina del POI
+        params_search = {
+            "action": "query",
+            "list": "search",
+            "format": "json",
+            "srsearch": nome_poi
+        }
+
+        try:
+            async with session.get(url, params=params_search) as resp:
+                data = await resp.json()
+
+            results = data.get("query", {}).get("search", [])
+            if not results:
+                return None
+
+            title = results[0]["title"]
+
+        except:
+            return None
+
+        # 2. Ottieni l'immagine originale (NON thumbnail)
+        params_image = {
+            "action": "query",
+            "prop": "pageimages",
+            "format": "json",
+            "piprop": "original",
+            "titles": title
+        }
+
+        try:
+            async with session.get(url, params=params_image) as resp:
+                data = await resp.json()
+
+            pages = data.get("query", {}).get("pages", {})
+            for _, page in pages.items():
+                if "original" in page:
+                    return page["original"]["source"]
+
+        except:
+            return None
+
+    return None
+
+
+def get_poi_image(poi: dict) -> str | None:
+    """
+    Restituisce l'immagine del POI se disponibile da OpenTripMap.
+    """
+    if not poi:
+        return None
+
+    # OpenTripMap preview image
+    if "preview" in poi and "source" in poi["preview"]:
+        return poi["preview"]["source"]
+
     return None
 
 def get_population(city_name):
@@ -416,7 +525,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         poi_ordinati = sorted(poi_dict.values(), key=lambda x: -x.get("rate", 0))
 
         # --- SELEZIONE INTELLIGENTE DEI POI TRAMITE LLM ---
-        print(f"   > Analisi e selezione POI tramite LLM (Mistral)... (potrebbe richiedere tempo)")
+        print(f"   > Analisi e selezione POI tramite LLM (Groq)... (potrebbe richiedere tempo)")
         poi = await seleziona_poi_con_llm(
             poi_ordinati,
             {"interessi_poi": richiesta.preferenze.interessi_poi},
@@ -429,10 +538,31 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi_eventi)
         
         immagine_url = None
-        if citta_tappa and citta_tappa != "In viaggio":
-            print(f"   > Cerco immagine per {citta_tappa}...")
-            immagine_url = get_city_image_url(citta_tappa)
-        
+
+        # 1️⃣ PRIORITÀ: POI iconici → cerca immagine su Wikipedia
+        for p in poi:
+            nome_poi = p.get("name", "")
+            # euristica: un POI iconico ha quasi sempre almeno 2 parole
+            if nome_poi and len(nome_poi.split()) >= 2:
+                immagine_url = await cerca_immagine_poi_wikipedia(nome_poi)
+                if immagine_url:
+                    break
+
+        # 2️⃣ PRIORITÀ: immagine del POI da OpenTripMap
+        if not immagine_url:
+            for p in poi:
+                img = get_poi_image(p)
+                if img:
+                    immagine_url = img
+                    break
+
+        # 3️⃣ PRIORITÀ: immagine della città (Wikipedia)
+        if not immagine_url and citta_tappa:
+            nome_pulito = citta_tappa.split(",")[0].strip()
+            immagine_url = await cerca_immagine_citta(nome_pulito)
+
+
+                
         # Pausa anti-spam per Groq: 16 secondi per permettere la ricarica dei token ed evitare l'errore 429 (Rate Limit)
         await asyncio.sleep(16)
         print(f"   > Giorno {i + 1} completato con successo!")

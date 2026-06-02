@@ -546,7 +546,7 @@ Rispondi SOLO con JSON valido:
                     poi_finali.append(p)
                 if len(poi_finali) == 5:
                     break
-        return poi_finali
+        return poi_finali[:5]
 
     except Exception as e:
         print(f"Errore selezione POI PRO: {e}")

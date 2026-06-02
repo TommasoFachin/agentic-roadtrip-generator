@@ -44,14 +44,14 @@ def genera_pdf_itinerario(itinerario, documento_testuale):
         if getattr(giorno, "immagine_url", None):
             try:
                 headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                    "User-Agent": "RoadTripAcademicApp/1.0 (mailto:student@university.local)"
                 }
-                response = requests.get(giorno.immagine_url, headers=headers, timeout=5)
+                response = requests.get(giorno.immagine_url, headers=headers, timeout=10)
                 if response.status_code == 200:
                     img = ImageReader(BytesIO(response.content))
                     img_w, img_h = 200, 130
                     img_y = y - img_h + 10
-                    c.drawImage(img, 350, img_y, width=img_w, height=img_h, preserveAspectRatio=True, anchor='c', mask='auto')
+                    c.drawImage(img, 350, img_y, width=img_w, height=img_h, preserveAspectRatio=True)
                     image_drawn = True
                 else:
                     print(f"Errore download immagine {giorno.citta_tappa}: HTTP {response.status_code}")
