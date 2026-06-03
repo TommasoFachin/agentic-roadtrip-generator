@@ -1,1 +1,1 @@
-{"_default": {"1": {"interessi_poi": ["punti di interesse", "monumenti", "museo"], "interessi_eventi": ["musica", "sport"], "preferenze_viaggio": [], "preferenze_cibo": [], "tappe_obbligatorie": []}}}
+{"_default": {"1": {"interessi_poi": ["punti di interesse", "monumenti", "musei", "punti famosi", "museo", "centri urbani"], "interessi_eventi": ["musica", "sport"], "preferenze_viaggio": ["limite km giornalieri: 100", "date del viaggio: ['10/06/2026', '15/06/2026']"], "preferenze_cibo": [], "tappe_obbligatorie": ["Modena", "Bolzano"]}}}

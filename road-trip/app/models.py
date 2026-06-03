@@ -14,6 +14,8 @@ class TripRequest(BaseModel):
     data_arrivo: date
     preferenze: TripPreferences
     tappe_intermedie: Optional[List[str]] = []
+    tappe_intermedie_utente: Optional[List[str]] = []
+
 
 
 class Stop(BaseModel):

@@ -27,6 +27,7 @@ Devi restituire ESCLUSIVAMENTE un JSON valido che rispetta ESATTAMENTE questo sc
   "luogo_partenza": "string",
   "luogo_destinazione": "string",
   "tappe_intermedie": [],
+  "tappe_intermedie_utente": [],
   "data_partenza": "YYYY-MM-DD",
   "data_arrivo": "YYYY-MM-DD",
   "preferenze": {
@@ -42,6 +43,15 @@ REGOLE IMPORTANTI:
 - Non aggiungere testo fuori dal JSON.
 - Non aggiungere commenti.
 - Non aggiungere campi extra.
+-Se l’utente indica esplicitamente una tappa intermedia (es: “voglio passare per Bolzano”, 
+“fermati a Zurigo”, “tappa a Firenze”), inseriscila in tappe_intermedie_utente.
+
+NON inventare tappe.
+NON riempire tappe_intermedie_utente se l’utente non lo chiede chiaramente.
+
+Le tappe_intermedie_utente rappresentano SOLO le tappe richieste dall’utente.
+Le tappe_intermedie normali NON devono essere usate per il routing.
+
 - IMPORTANTE: Per i luoghi di partenza e destinazione, inserisci sempre anche la Nazione per evitare ambiguità geografiche (es. "Modena, Italia", "Parigi, Francia").
 - IMPORTANTE: Inserisci città in "tappe_intermedie" SOLO E SOLTANTO SE l'utente le ha esplicitamente richieste. ALTRIMENTI, DEVI lasciare l'array vuoto []. NON inventare mai tappe che l'utente non ha nominato!
 - IMPORTANTE: Tieni conto della data di oggi per stabilire l'anno corretto se non viene specificato.

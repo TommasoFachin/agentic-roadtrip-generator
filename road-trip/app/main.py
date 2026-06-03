@@ -54,9 +54,14 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
             tappe_unite.append(tappa)
             nomi_tappe_visti.add(nome)
 
-    if richiesta.tappe_intermedie:
+    if hasattr(richiesta, "tappe_intermedie_utente") and richiesta.tappe_intermedie_utente:
+        for t in richiesta.tappe_intermedie_utente:
+            aggiungi_tappa(t)
+            
+    if hasattr(richiesta, "tappe_intermedie") and richiesta.tappe_intermedie:
         for t in richiesta.tappe_intermedie:
             aggiungi_tappa(t)
+
     if profilo.tappe_obbligatorie:
         for t in profilo.tappe_obbligatorie:
             aggiungi_tappa(t)
