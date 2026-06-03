@@ -30,8 +30,6 @@ async def interpreta(payload: InterpretationRequest):
 #utility pe rpreparare i dati del viaggio
 def _prepara_dati_viaggio(richiesta: TripRequest):
 
-    profilo = get_user_profile()
-
     # Geocoding: converte citta in coordinate
     coord_start = geocoding_citta(richiesta.luogo_partenza)
     coord_end = geocoding_citta(richiesta.luogo_destinazione)
@@ -60,10 +58,6 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
             
     if hasattr(richiesta, "tappe_intermedie") and richiesta.tappe_intermedie:
         for t in richiesta.tappe_intermedie:
-            aggiungi_tappa(t)
-
-    if profilo.tappe_obbligatorie:
-        for t in profilo.tappe_obbligatorie:
             aggiungi_tappa(t)
                 
     for tappa in tappe_unite:

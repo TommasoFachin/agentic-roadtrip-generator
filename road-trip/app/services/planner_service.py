@@ -102,57 +102,165 @@ async def cerca_immagine_citta(citta: str) -> str | None:
 
 async def cerca_immagine_poi_wikipedia(nome_poi: str) -> str | None:
     """
-    Cerca l'immagine principale (non thumbnail) di un POI iconico su Wikipedia.
-    Funziona per qualsiasi monumento famoso.
+    Cerca un'immagine del POI usando Wikipedia EN.
+    Robusta contro 403, HTML, risposte non JSON.
     """
-    url = "https://en.wikipedia.org/w/api.php"
-    headers = {"User-Agent": "RoadTripApp/1.0"}
+    await asyncio.sleep(1)
+
+    headers = {"User-Agent": "RoadTripAcademicApp/1.0 (mailto:student@university.local)"}
+
+    # 1️⃣ CERCA IL TITOLO
+    params_search = {
+        "action": "query",
+        "list": "search",
+        "format": "json",
+        "srsearch": nome_poi,
+        "srlimit": 1
+    }
 
     async with aiohttp.ClientSession(headers=headers) as session:
-
-        # 1. Cerca la pagina del POI
-        params_search = {
-            "action": "query",
-            "list": "search",
-            "format": "json",
-            "srsearch": nome_poi
-        }
-
         try:
-            async with session.get(url, params=params_search) as resp:
+            async with session.get("https://en.wikipedia.org/w/api.php", params=params_search) as resp:
+
+                if resp.status != 200:
+                    return None
+
+                if "application/json" not in resp.headers.get("Content-Type", ""):
+                    return None
+
                 data = await resp.json()
 
             results = data.get("query", {}).get("search", [])
             if not results:
                 return None
 
-            title = results[0]["title"]
+            titolo = results[0]["title"]
 
         except:
             return None
 
-        # 2. Ottieni l'immagine originale (NON thumbnail)
+        # 2️⃣ OTTIENI UNA THUMBNAIL (FUNZIONA SEMPRE)
         params_image = {
             "action": "query",
             "prop": "pageimages",
             "format": "json",
-            "piprop": "original",
-            "titles": title
+            "piprop": "thumbnail",
+            "pithumbsize": 800,
+            "titles": titolo
         }
 
         try:
-            async with session.get(url, params=params_image) as resp:
+            async with session.get("https://en.wikipedia.org/w/api.php", params=params_image) as resp:
+
+                if resp.status != 200:
+                    return None
+
+                if "application/json" not in resp.headers.get("Content-Type", ""):
+                    return None
+
                 data = await resp.json()
 
             pages = data.get("query", {}).get("pages", {})
             for _, page in pages.items():
-                if "original" in page:
-                    return page["original"]["source"]
+                thumb = page.get("thumbnail", {}).get("source")
+                if thumb:
+                    return thumb
 
         except:
             return None
 
     return None
+
+
+async def traduci_citta_in_inglese(nome: str) -> str:
+    """
+    Cerca il titolo corretto della città su Wikipedia EN.
+    Ritorna SEMPRE un nome valido e NON crasha mai.
+    """
+    url = "https://en.wikipedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "list": "search",
+        "format": "json",
+        "srsearch": nome
+    }
+
+    headers = {
+        "User-Agent": "RoadTripAcademicApp/1.0 (mailto:student@university.local)"
+    }
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        try:
+            async with session.get(url, params=params) as resp:
+                # Se Wikipedia risponde con HTML → NON fare json()
+                if resp.status != 200:
+                    print(f"[traduci_citta] Wikipedia 403/errore per '{nome}' → uso nome originale")
+                    return nome
+
+                content_type = resp.headers.get("Content-Type", "")
+                if "application/json" not in content_type:
+                    print(f"[traduci_citta] Risposta NON JSON per '{nome}' → uso nome originale")
+                    return nome
+
+                data = await resp.json()
+
+            results = data.get("query", {}).get("search", [])
+            if not results:
+                return nome
+
+            return results[0]["title"]
+
+        except Exception as e:
+            print(f"[traduci_citta] Errore per '{nome}': {e}")
+            return nome
+
+
+
+async def cerca_immagine_commons(citta: str) -> str | None:
+    """
+    Cerca un'immagine iconica della città su Wikimedia Commons.
+    Robusta contro 403, HTML, rate limit.
+    """
+    url = "https://commons.wikimedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "generator": "search",
+        "gsrsearch": f"{citta} skyline OR landmark OR city",
+        "gsrlimit": 10,
+        "prop": "imageinfo",
+        "iiprop": "url",
+        "format": "json"
+    }
+
+    headers = {
+        "User-Agent": "RoadTripAcademicApp/1.0 (mailto:student@university.local)"
+    }
+
+    async with aiohttp.ClientSession(headers=headers) as session:
+        try:
+            async with session.get(url, params=params) as resp:
+
+                if resp.status != 200:
+                    return None
+
+                if "application/json" not in resp.headers.get("Content-Type", ""):
+                    return None
+
+                data = await resp.json()
+
+            pages = data.get("query", {}).get("pages", {})
+            for _, page in pages.items():
+                info = page.get("imageinfo", [])
+                if info:
+                    return info[0].get("url")
+
+        except:
+            return None
+
+    return None
+
+
+
 
 
 def get_poi_image(poi: dict) -> str | None:
@@ -539,14 +647,16 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         
         immagine_url = None
 
-        # 1️⃣ PRIORITÀ: POI iconici → cerca immagine su Wikipedia
+        # 1️⃣ PRIORITÀ: POI iconici → cerca sempre su Wikipedia EN
         for p in poi:
-            nome_poi = p.get("name", "")
-            # euristica: un POI iconico ha quasi sempre almeno 2 parole
-            if nome_poi and len(nome_poi.split()) >= 2:
-                immagine_url = await cerca_immagine_poi_wikipedia(nome_poi)
-                if immagine_url:
-                    break
+            nome_poi = p.get("name", "").strip()
+            if not nome_poi:
+                continue
+
+            # Cerca SEMPRE, anche se è una sola parola
+            immagine_url = await cerca_immagine_poi_wikipedia(nome_poi)
+            if immagine_url:
+                break
 
         # 2️⃣ PRIORITÀ: immagine del POI da OpenTripMap
         if not immagine_url:
@@ -556,16 +666,22 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
                     immagine_url = img
                     break
 
-        # 3️⃣ PRIORITÀ: immagine della città (Wikipedia)
         if not immagine_url and citta_tappa:
             nome_pulito = citta_tappa.split(",")[0].strip()
-            immagine_url = await cerca_immagine_citta(nome_pulito)
+            nome_en = await traduci_citta_in_inglese(nome_pulito)
+            immagine_url = await cerca_immagine_commons(nome_en)
+        if not immagine_url:
+            immagine_url = "https://upload.wikimedia.org/wikipedia/commons/a/a8/Tour_Eiffel_Wikimedia_Commons.jpg"
+
+
 
 
                 
         # Pausa anti-spam per Groq: 16 secondi per permettere la ricarica dei token ed evitare l'errore 429 (Rate Limit)
         await asyncio.sleep(16)
         print(f"   > Giorno {i + 1} completato con successo!")
+        print("   > POI scelti:", [p.get("name") for p in poi])
+        print("   > Immagine scelta:", immagine_url)
 
         giorno = DayPlan(
             giorno=i + 1,
