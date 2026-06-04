@@ -30,8 +30,14 @@ if not ORS_API_KEY_VALUE:
 
 class Settings:
     project_name: str = "Road Trip API"
+
     ORS_API_KEY = ORS_API_KEY_VALUE
     TICKETMASTER_API_KEY = TICKETMASTER_API_KEY_VALUE
     GEONAMES_USERNAME = GEONAMES_USERNAME_VALUE
+
+    # 🔥 AGGIUNTE NECESSARIE PER LA RICERCA EVENTI
+    EVENTBRITE_TOKEN = os.getenv("EVENTBRITE_TOKEN", None)
+    BANDSINTOWN_APP_ID = "roadtrip_app"
+
 
 settings = Settings()

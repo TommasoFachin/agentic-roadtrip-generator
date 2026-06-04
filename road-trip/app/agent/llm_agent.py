@@ -404,7 +404,8 @@ async def seleziona_eventi_con_llm(lista_eventi: list, interessi_eventi: list) -
     # --- COMPRESSIONE EVENTI PER RISPARMIARE TOKEN ---
     eventi_compatti = []
     for e in lista_eventi[:15]:  # Limitiamo a 15 eventi per sicurezza
-        classifications = e.get("classifications", [{}])[0]
+        class_list = e.get("classifications")
+        classifications = class_list[0] if class_list else {}
         genere = classifications.get("genre", {}).get("name", "")
         segmento = classifications.get("segment", {}).get("name", "")
         tipo = f"{segmento} - {genere}".strip(" -") or "Evento"

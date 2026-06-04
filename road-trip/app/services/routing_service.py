@@ -25,7 +25,7 @@ def calcola_percorso(coordinate_viaggio: List[Tuple[float, float]]) -> dict:
 
     #chiamata HTTP POST a ORS
     try:
-        response = requests.post(ORS_DIRECTIONS_URL, json=body, headers=headers, timeout=15)
+        response = requests.post(ORS_DIRECTIONS_URL, json=body, headers=headers, timeout=45)
     except requests.exceptions.RequestException as e:
         raise HTTPException(
             status_code=502,

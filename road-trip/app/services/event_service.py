@@ -110,51 +110,146 @@ def mappa_interessi_eventi(interessi_eventi: list) -> dict:
     }
 
 def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, interessi_eventi: list) -> list:
-    """Cerca eventi su Ticketmaster per una data città e data, basandosi sugli interessi."""
+    """
+    Cerca eventi REALI entro 50 km usando:
+    - Ticketmaster (radius)
+    - Eventbrite (radius)
+    - Bandsintown (radius, solo musica)
+    - Web search (DuckDuckGo)
+    Filtra per data e per interessi dell’utente.
+    """
 
     print(f"   > Ricerca eventi per {citta} il {data}...")
 
-    start_date = datetime.combine(data, datetime.min.time()).strftime('%Y-%m-%dT%H:%M:%SZ')
-    end_date = datetime.combine(data, datetime.max.time()).strftime('%Y-%m-%dT%H:%M:%SZ')
+    # --- COORDINATE DELLA TAPPA ---
+    try:
+        from app.services.geocoding_service import geocoding_citta
+        lon, lat = geocoding_citta(citta)
+    except:
+        lon = lat = None
 
-    dati_ricerca = mappa_interessi_eventi(interessi_eventi)
-    classifications = dati_ricerca["classifications"]
-    keywords = dati_ricerca["keywords"]
-    
-    eventi_trovati = []
+    data_str = data.strftime("%Y-%m-%d")
+    eventi = []
 
-    if not settings.TICKETMASTER_API_KEY:
-        print("   > ATTENZIONE: TICKETMASTER_API_KEY non configurata. Salto ricerca Ticketmaster.")
-    else:
-        params = {
-            "apikey": settings.TICKETMASTER_API_KEY,
-            "city": citta.split(",")[0].strip(),
-            "startDateTime": start_date,
-            "endDateTime": end_date,
-            "sort": "date,asc",
-            "size": 20
-        }
-        if classifications:
-            params["classificationName"] = ",".join(classifications)
-        if keywords:
-            params["keyword"] = " ".join(keywords)
-
-        url = "https://app.ticketmaster.com/discovery/v2/events.json"
+    # --- 1️⃣ TICKETMASTER RADIUS 50 KM ---
+    if settings.TICKETMASTER_API_KEY and lat and lon:
         try:
-            response = requests.get(url, params=params, timeout=10)
-            response_data = response.json()
-            eventi_tm = response_data.get("_embedded", {}).get("events", [])
-            eventi_trovati.extend(eventi_tm)
-            
-            log_msg = f"     Trovati {len(eventi_tm)} eventi su Ticketmaster."
-            print(log_msg)
+            url = "https://app.ticketmaster.com/discovery/v2/events.json"
+            params = {
+                "apikey": settings.TICKETMASTER_API_KEY,
+                "latlong": f"{lat},{lon}",
+                "radius": 50,
+                "unit": "km",
+                "startDateTime": f"{data_str}T00:00:00Z",
+                "endDateTime": f"{data_str}T23:59:59Z"
+            }
+            r = requests.get(url, params=params).json()
+
+            if "_embedded" in r:
+                for e in r["_embedded"]["events"]:
+                    try:
+                        venue_name = e.get("_embedded", {}).get("venues", [{}])[0].get("name", "Unknown")
+                    except Exception:
+                        venue_name = "Unknown"
+                    eventi.append({
+                        "name": e.get("name", "Senza titolo"),
+                        "url": e.get("url", ""),
+                        "classifications": e.get("classifications", []),
+                        "venue": venue_name
+                    })
+
+            print(f"     > Ticketmaster: trovati {len(eventi)} eventi radius.")
         except Exception as e:
-            print(f"     Eccezione durante la chiamata a Ticketmaster: {e}")
+            print("     > Errore Ticketmaster:", e)
 
-    # INTEGRAZIONE RICERCA WEB
-    # Aggiungiamo i risultati della ricerca web personalizzati in base agli interessi
-    if citta != "In viaggio":
-        eventi_web = cerca_eventi_web(citta, data, country_code, interessi_eventi)
-        eventi_trovati.extend(eventi_web)
+    # --- 2️⃣ EVENTBRITE RADIUS 50 KM ---
+    if settings.EVENTBRITE_TOKEN and lat and lon:
+        try:
+            url = "https://www.eventbriteapi.com/v3/events/search/"
+            headers = {"Authorization": f"Bearer {settings.EVENTBRITE_TOKEN}"}
+            params = {
+                "location.latitude": lat,
+                "location.longitude": lon,
+                "location.within": "50km",
+                "start_date.range_start": f"{data_str}T00:00:00Z",
+                "start_date.range_end": f"{data_str}T23:59:59Z"
+            }
+            r = requests.get(url, headers=headers, params=params).json()
 
-    return eventi_trovati
+            for e in r.get("events", []):
+                eventi.append({
+                    "name": e.get("name", {}).get("text", "Senza titolo"),
+                    "url": e.get("url", ""),
+                    "classifications": [{"segment": {"name": "Eventbrite"}}],
+                    "venue": e.get("venue_id", "Unknown")
+                })
+
+            print(f"     > Eventbrite: trovati {len(r.get('events', []))} eventi.")
+        except Exception as e:
+            print("     > Errore Eventbrite:", e)
+
+    # --- 3️⃣ BANDSINTOWN (solo musica) ---
+    if "musica" in [i.lower() for i in interessi_eventi] and lat and lon:
+        try:
+            url = "https://rest.bandsintown.com/events/"
+            params = {
+                "location": f"{lat},{lon}",
+                "radius": 50,
+                "date": data_str,
+                "app_id": "roadtrip_app"
+            }
+            r = requests.get(url, params=params).json()
+
+            if isinstance(r, list):
+                for e in r:
+                    eventi.append({
+                        "name": e.get("title", "Concerto"),
+                        "url": e.get("url", ""),
+                        "classifications": [{"segment": {"name": "Music"}}],
+                        "venue": e.get("venue", {}).get("name", "Unknown")
+                    })
+
+            print(f"     > Bandsintown: trovati {len(r) if isinstance(r, list) else 0} eventi.")
+        except Exception as e:
+            print("     > Errore Bandsintown:", e)
+
+    # --- 4️⃣ RICERCA WEB (DuckDuckGo) ---
+    eventi_web = cerca_eventi_web(citta, data, country_code, interessi_eventi)
+    eventi.extend(eventi_web)
+
+    # --- 5️⃣ FILTRO PER INTERESSI ---
+    mappa = mappa_interessi_eventi(interessi_eventi)
+    target_classifications = [c.lower() for c in mappa["classifications"]]
+    target_keywords = [k.lower() for k in mappa["keywords"]]
+
+    eventi_filtrati = []
+
+    for e in eventi:
+        nome = e["name"].lower()
+        rilevante = False
+        
+        is_web = any(c.get("segment", {}).get("name") == "Evento dal Web" for c in e.get("classifications", []))
+        if is_web:
+            rilevante = True
+
+        if not rilevante and any(k in nome for k in target_keywords):
+            rilevante = True
+
+        if not rilevante:
+            for c in e.get("classifications", []):
+                segment_name = c.get("segment", {}).get("name", "").lower()
+                genre_name = c.get("genre", {}).get("name", "").lower()
+                
+                if any(tc in segment_name or tc in genre_name for tc in target_classifications):
+                    rilevante = True
+                    break
+
+        if rilevante:
+            eventi_filtrati.append(e)
+
+    if not eventi_filtrati and eventi:
+        eventi_filtrati = eventi
+
+    print(f"     > Totale eventi filtrati per interessi (passati all'LLM): {len(eventi_filtrati)}")
+
+    return eventi_filtrati
