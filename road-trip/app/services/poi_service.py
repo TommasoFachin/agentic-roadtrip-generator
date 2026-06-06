@@ -43,7 +43,6 @@ def cerca_poi(lat, lon, radius=30000, kinds=None, limit=100, min_rate=None):
 
     if kinds:
         params["kinds"] = ",".join(set(kinds))
-        params["kinds_filter"] = "or"   
         
     if min_rate:
         params["rate"] = min_rate
@@ -57,11 +56,11 @@ def cerca_poi(lat, lon, radius=30000, kinds=None, limit=100, min_rate=None):
         return []
 
     if response.status_code != 200:
+        print(f"     [OpenTripMap] Errore API: {response.status_code} - {response.text}")
         return []
 
     data = response.json()
 
-    address_pattern = re.compile(r'.*\s\d+')
     blacklist = ["accomodations", "unclassified_objects"]
 
     poi_list = []
@@ -69,7 +68,7 @@ def cerca_poi(lat, lon, radius=30000, kinds=None, limit=100, min_rate=None):
         name = item.get("name", "").strip()
         kinds = item.get("kinds", "")
 
-        if not name or address_pattern.match(name):
+        if not name:
             continue
 
         if any(b in kinds for b in blacklist):
@@ -98,15 +97,15 @@ def mappa_interessi(interessi_poi):
 
     mapping = {
         # SPORT E DIVERTIMENTO
-        "sport": ["sport", "stadiums"],
-        "musica": ["theatres_and_entertainments", "cultural"],
-        "birra": ["pubs", "foods", "bars"],
+        "sport": ["sport"],
+        "musica": ["cultural", "amusements"],
+        "birra": ["foods"],
 
         # CIBO
         "cibo": ["foods"],
 
         # NATURA
-        "natura": ["natural", "parks"],
+        "natura": ["natural"],
 
         # CITTÀ / CENTRO
         "città": ["urban_environment", "squares", "interesting_places"],
@@ -114,19 +113,18 @@ def mappa_interessi(interessi_poi):
         "piazze": ["squares", "urban_environment"],
 
         # ARTE / CULTURA
-        "arte": ["art", "cultural", "museums", "art_galleries"],
-        "cultura": ["cultural", "museums", "art_galleries"],
+        "arte": ["cultural", "museums"],
+        "cultura": ["cultural", "museums"],
         "musei": ["museums", "cultural"],
         "museo": ["museums", "cultural"],
 
         # STORIA / MONUMENTI
-        "storia": ["historic", "monuments_and_memorials", "archaeology"],
+        "storia": ["historic", "monuments_and_memorials"],
         "storico": ["historic", "monuments_and_memorials"],
         "monumenti": [
             "monuments_and_memorials",
             "historic",
             "architecture",
-            "historic_architecture",
             "interesting_places",
             "cultural"
         ],
@@ -149,12 +147,13 @@ def mappa_interessi(interessi_poi):
             "cultural"
         ],
         "monumento": ["monuments_and_memorials", "historic"],
-        "guerra": ["war_memorials", "monuments_and_memorials"],
+        "centri città": ["urban_environment", "squares", "interesting_places", "historic", "architecture", "cultural"],
+        "guerra": ["historic", "monuments_and_memorials"],
 
         # ARCHITETTURA
-        "architettura": ["architecture", "historic_architecture"],
-        "edifici": ["architecture", "historic_architecture"],
-        "palazzi": ["palaces", "architecture"],
+        "architettura": ["architecture"],
+        "edifici": ["architecture"],
+        "palazzi": ["architecture", "historic"],
 
         # INTERESSI GENERICI TURISTICI
         
@@ -164,16 +163,22 @@ def mappa_interessi(interessi_poi):
         "turistici": ["interesting_places", "historic", "cultural"],
 
         # RELIGIONE (solo se richiesto)
-        "chiese": ["churches", "religion"],
+        "chiese": ["religion"],
         "religione": ["religion"],
-        "cattedrali": ["cathedrals", "religion"],
+        "cattedrali": ["religion"],
     }
 
     kinds = []
     for interesse in interessi_poi:
-        interesse_lower = interesse.lower().strip()
+        interesse_lower = interesse.lower().strip().replace("_", " ")
         if interesse_lower in mapping:
             kinds.extend(mapping[interesse_lower])
+        else:
+            # Ricerca parziale salvavita per intercettare sinonimi o errori
+            for key in mapping:
+                if key in interesse_lower or interesse_lower in key:
+                    kinds.extend(mapping[key])
+                    break
 
     # fallback intelligente se l’utente mette qualcosa di non mappato
     if not kinds and interessi_poi:

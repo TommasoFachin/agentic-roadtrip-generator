@@ -364,16 +364,16 @@ PROMPT_EVENTI = """
 Sei un assistente che suggerisce eventi serali per un viaggiatore.
 
 Riceverai:
+- la città di destinazione per la serata
 - gli interessi generali dell'utente (es. musica, sport, teatro)
-- una lista di eventi disponibili per la serata con nome, URL, orario, luogo e genere.
+- una lista di eventi disponibili per la serata con nome, tipo e luogo.
 
 Il tuo compito è selezionare i MIGLIORI 2 eventi (massimo) che potrebbero piacere all'utente.
 
 REGOLE DI SELEZIONE:
-1. Scegli eventi molto pertinenti agli interessi dell'utente.
-2. Se non ci sono eventi pertinenti, non suggerire nulla (restituisci una lista vuota).
-3. SCARTA I SITI SPAZZATURA: ignora aggregatori nazionali (es. italia.it, ticket.it) o liste generiche (es. 'Vacanze in Italia'). Scegli SOLO eventi veri della città.
-4. Se ci sono più eventi validi, scegli i 2 più interessanti o diversi tra loro.
+1. Scegli eventi pertinenti agli interessi dell'utente e che si svolgano EFFETTIVAMENTE nella città indicata o nelle immediate vicinanze.
+2. SE UN EVENTO È LONTANO (es. in un'altra città) O È UN SITO SPAZZATURA/GENERICO (es. "Concerti in Italia", "Festival 2026", "Eventi TikTok"), DEVI SCARTARLO.
+3. Se non ci sono eventi validi e locali, restituisci una lista vuota: {"eventi_selezionati": []}. È MEGLIO NON SUGGERIRE NULLA PIUTTOSTO CHE EVENTI LONTANI O FALSI.
 4. Rispondi SOLO con un JSON valido, senza testo aggiuntivo.
 
 STRUTTURA JSON DA RESTITUIRE:
@@ -391,7 +391,7 @@ llm_eventi = Agent(
     instructions=PROMPT_EVENTI
 )
 
-async def seleziona_eventi_con_llm(lista_eventi: list, interessi_eventi: list) -> list:
+async def seleziona_eventi_con_llm(lista_eventi: list, interessi_eventi: list, citta_tappa: str) -> list:
     if not lista_eventi:
         return []
 
@@ -412,16 +412,20 @@ async def seleziona_eventi_con_llm(lista_eventi: list, interessi_eventi: list) -
         
         eventi_compatti.append({
             "nome": e.get("name"),
-            "tipo": tipo
+            "tipo": tipo,
+            "luogo": e.get("venue", "Web / Sconosciuto")
         })
 
     prompt = f"""
+Città della serata: {citta_tappa}
+
 Interessi utente per gli eventi: {interessi_eventi}
 
 Lista eventi disponibili:
 {json.dumps(eventi_compatti, ensure_ascii=False)}
 
 Seleziona i 2 migliori eventi secondo le regole.
+SE NESSUN EVENTO È NELLA CITTÀ O VICINO, RESTITUISCI {{"eventi_selezionati": []}}.
 Rispondi SOLO con JSON valido.
 """
 
@@ -441,8 +445,6 @@ Rispondi SOLO con JSON valido.
         return []
 
 async def seleziona_poi_con_llm(lista_poi: list, profilo: dict, citta_tappa: str) -> list:
-    if not lista_poi:
-        return []
 
     # Pre-filtro: ridotto a 40 per risparmiare Token. I monumenti famosi sono già in cima grazie al min_rate="3"!
     lista_poi = lista_poi[:100]

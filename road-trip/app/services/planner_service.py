@@ -643,7 +643,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         # --- SELEZIONE EVENTI TRAMITE LLM ---
         # Usa gli interessi generali del profilo utente, non quelli del viaggio specifico
         lista_eventi = cerca_eventi(citta_tappa, country_code, giorno_data, profilo.interessi_eventi)
-        eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi_eventi)
+        eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi_eventi, citta_tappa)
         
         immagine_url = None
 
