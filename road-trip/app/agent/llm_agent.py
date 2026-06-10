@@ -43,6 +43,7 @@ REGOLE IMPORTANTI:
 - Non aggiungere testo fuori dal JSON.
 - Non aggiungere commenti.
 - Non aggiungere campi extra.
+- ATTENZIONE ALLA CRONOLOGIA: Il testo che ricevi è la cronologia intera di una chat. DEVI dare la priorità assoluta agli ULTIMI MESSAGGI. Se l'utente ha cambiato destinazione, partenza, tappe o date nell'ultimo messaggio (es. ha cambiato idea da Copenaghen a Berlino), usa l'ultima richiesta e ignora quelle precedenti.
 -Se l’utente indica esplicitamente una tappa intermedia (es: “voglio passare per Bolzano”, 
 “fermati a Zurigo”, “tappa a Firenze”), inseriscila in tappe_intermedie_utente.
 
@@ -112,16 +113,29 @@ DEVI SEMPRE restituire un JSON con questa struttura:
 
 REGOLE:
 
-1) "aggiornamenti" deve contenere SOLO informazioni utili al profilo. Usa SOLO queste chiavi:
-   - interessi_poi (lista, es: arte, natura, storia, monumenti, architettura, punti di interesse)
-   - interessi_eventi (lista, es: musica, sport, sagre, birra, teatro)
-   - preferenze_viaggio (lista, es: date del viaggio, limite km giornalieri)
+1) "aggiornamenti" deve contenere SOLO le chiavi dei campi che sono stati modificati dall'ultimo messaggio.
+IMPORTANTE: Quando modifichi un campo, devi restituire l'INTERA LISTA AGGIORNATA per quel campo (es. se rimuovi una tappa, restituisci la lista delle tappe rimanenti presa dal "Profilo attuale").
+Usa SOLO queste chiavi per gli aggiornamenti:
+   - interessi_poi (lista)
+   - interessi_eventi (lista)
+   - preferenze_viaggio (lista)
    - preferenze_cibo (lista)
-   - tappe_obbligatorie (lista di stringhe contenenti SOLO i nomi esatti delle città, es: ["Strasburgo", "Milano"])
+   - tappe_obbligatorie (lista di stringhe con i nomi esatti delle città)
+   - luogo_partenza (stringa)
+   - luogo_destinazione (stringa)
 
-2) Ignora saluti e frasi generiche. Se non ci sono informazioni utili usa "aggiornamenti": {}
+2) Se l'utente chiede di RIMUOVERE un elemento (es. "togli Berlino"), rimuovilo dalla lista corrispondente del Profilo attuale e restituisci la nuova lista in "aggiornamenti".
 
-3) "risposta" deve essere una frase naturale, amichevole e coerente con il messaggio.
+3) Ignora saluti e frasi generiche. Se non ci sono informazioni utili usa "aggiornamenti": {}
+
+4) "risposta" deve essere una frase naturale, amichevole e coerente con il messaggio e con gli "aggiornamenti" che hai fatto.
+
+5) DISTINZIONE TAPPE:
+   - La città dopo "da" è `luogo_partenza`.
+   - La città dopo "a" o "fino a" è `luogo_destinazione`.
+   - Le città dopo "tappa a", "passando per", "via" sono `tappe_obbligatorie`.
+   - NON includere mai la destinazione finale o la partenza nella lista `tappe_obbligatorie`. Se sono già presenti, rimuovile esplicitamente.
+   - Quando l'utente cambia idea su una destinazione o partenza, SOVRASCRIVI i vecchi valori e rimuovi le vecchie tappe non più rilevanti.
 
 Rispondi SOLO con un JSON valido.
 """

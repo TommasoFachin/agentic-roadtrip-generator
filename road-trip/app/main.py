@@ -13,6 +13,7 @@ from app.services.planner_service import (
     calcola_tappe,
     verifica_fattibilita_viaggio
 )
+from fastapi.middleware.cors import CORSMiddleware
 from app.services.user_profile_service import get_user_profile, update_user_profile
 
 #modello per l'endpoint interpreta-richiesta, che riceve un testo e restituisce un JSON strutturato secondo TripRequest
@@ -20,6 +21,16 @@ class InterpretationRequest(BaseModel):
     testo: str
 
 app = FastAPI()
+
+# Abilitiamo i CORS per permettere al frontend HTML/JS di comunicare con le API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Consente a qualsiasi frontend locale di fare richieste
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(user_profile_router)
 
 #endpoint per interpretare il testo naturale e restituire un JSON strutturato secondo TripRequest

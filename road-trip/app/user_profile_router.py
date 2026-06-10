@@ -74,11 +74,9 @@ async def chatbot_messaggio(payload: ChatbotMessage):
         profilo_dict = profilo.model_dump()
 
 
-        # MERGE AUTOMATICO PER TUTTE LE LISTE
+        # AGGIORNAMENTO COMPLETO PER TUTTE LE LISTE
         for campo in ["interessi_poi", "interessi_eventi", "preferenze_viaggio", "preferenze_cibo", "tappe_obbligatorie"]:
             if campo in aggiornamenti:
-                esistenti = set(profilo_dict.get(campo, []))
-                
                 valori_raw = aggiornamenti[campo]
                 # Gestione anti-crash per liste o dizionari anomali dall'LLM
                 if isinstance(valori_raw, dict):
@@ -86,8 +84,8 @@ async def chatbot_messaggio(payload: ChatbotMessage):
                 elif not isinstance(valori_raw, list):
                     valori_raw = [valori_raw]
                 
-                nuovi = set(str(v) for v in valori_raw)
-                profilo_dict[campo] = list(esistenti.union(nuovi))
+                # Sostituiamo interamente la lista (l'LLM restituisce la lista aggiornata)
+                profilo_dict[campo] = [str(v) for v in valori_raw]
 
         # aggiorna il profilo completo
         profilo = update_user_profile(profilo_dict)
