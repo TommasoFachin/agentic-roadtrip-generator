@@ -647,7 +647,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         
         immagine_url = None
 
-        # 1️⃣ PRIORITÀ: POI iconici → cerca sempre su Wikipedia EN
+        #  PRIORITÀ: POI iconici → cerca sempre su Wikipedia EN
         for p in poi:
             nome_poi = p.get("name", "").strip()
             if not nome_poi:
@@ -658,7 +658,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             if immagine_url:
                 break
 
-        # 2️⃣ PRIORITÀ: immagine del POI da OpenTripMap
+        #  PRIORITÀ: immagine del POI da OpenTripMap
         if not immagine_url:
             for p in poi:
                 img = get_poi_image(p)

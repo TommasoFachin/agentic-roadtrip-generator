@@ -131,7 +131,7 @@ def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, inte
     data_str = data.strftime("%Y-%m-%d")
     eventi = []
 
-    # --- 1️⃣ TICKETMASTER RADIUS 50 KM ---
+    # ---  TICKETMASTER RADIUS 50 KM ---
     if settings.TICKETMASTER_API_KEY and lat and lon:
         try:
             url = "https://app.ticketmaster.com/discovery/v2/events.json"
@@ -162,7 +162,7 @@ def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, inte
         except Exception as e:
             print("     > Errore Ticketmaster:", e)
 
-    # --- 2️⃣ EVENTBRITE RADIUS 50 KM ---
+    # ---  EVENTBRITE RADIUS 50 KM ---
     if settings.EVENTBRITE_TOKEN and lat and lon:
         try:
             url = "https://www.eventbriteapi.com/v3/events/search/"
@@ -188,7 +188,7 @@ def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, inte
         except Exception as e:
             print("     > Errore Eventbrite:", e)
 
-    # --- 3️⃣ BANDSINTOWN (solo musica) ---
+    # ---  BANDSINTOWN (solo musica) ---
     if "musica" in [i.lower() for i in interessi_eventi] and lat and lon:
         try:
             url = "https://rest.bandsintown.com/events/"
@@ -213,11 +213,11 @@ def cerca_eventi(citta: str, country_code: str | None, data: datetime.date, inte
         except Exception as e:
             print("     > Errore Bandsintown:", e)
 
-    # --- 4️⃣ RICERCA WEB (DuckDuckGo) ---
+    # ---  RICERCA WEB (DuckDuckGo) ---
     eventi_web = cerca_eventi_web(citta, data, country_code, interessi_eventi)
     eventi.extend(eventi_web)
 
-    # --- 5️⃣ FILTRO PER INTERESSI ---
+    # ---  FILTRO PER INTERESSI ---
     mappa = mappa_interessi_eventi(interessi_eventi)
     target_classifications = [c.lower() for c in mappa["classifications"]]
     target_keywords = [k.lower() for k in mappa["keywords"]]
