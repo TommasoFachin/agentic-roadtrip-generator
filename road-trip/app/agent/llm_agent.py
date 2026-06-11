@@ -578,3 +578,56 @@ Rispondi SOLO con JSON valido:
     except Exception as e:
         print(f"Errore selezione POI PRO: {e}")
         return lista_poi[:5]
+
+
+# ---------------------------------------------------------
+# AGENTE 5 — SELEZIONE CITTA' TAPPA
+# ---------------------------------------------------------
+
+PROMPT_CITTA_TAPPA = """
+Sei un esperto di viaggi e geografia. Il tuo compito è scegliere la MIGLIORE città in cui fermarsi per la notte al termine di una tappa di un road trip.
+
+Riceverai:
+- Gli interessi dell'utente per il viaggio.
+- Una lista di città nel raggio di fine tappa, con la rispettiva popolazione.
+
+REGOLE PER LA SCELTA:
+1. Scegli la città più interessante dal punto di vista turistico, storico, culturale o naturalistico (basandoti sugli interessi dell'utente).
+2. Se nessuna città spicca turisticamente, scegli la città con la popolazione maggiore perché avrà più servizi (hotel, ristoranti).
+3. NON INVENTARE NOMI. Devi restituire ESATTAMENTE il nome di una delle città fornite.
+
+Rispondi SOLO con un JSON valido con questa struttura:
+{
+  "citta_scelta": "Nome Città"
+}
+"""
+
+llm_citta_tappa = Agent(
+    model=model,
+    instructions=PROMPT_CITTA_TAPPA
+)
+
+async def seleziona_citta_tappa_con_llm(citta_list: list, interessi: list) -> str:
+    if not citta_list:
+        return ""
+    if len(citta_list) == 1:
+        return citta_list[0]["nome"]
+
+    citta_compilate = [{"nome": c["nome"], "popolazione": c["popolazione"]} for c in citta_list]
+
+    prompt = f"Interessi utente: {interessi}\nLista città disponibili:\n{json.dumps(citta_compilate, ensure_ascii=False)}\nSeleziona la migliore città. Rispondi SOLO in JSON."
+    
+    try:
+        result = await asyncio.wait_for(llm_citta_tappa.run(prompt), timeout=15.0)
+        raw_output = getattr(result, 'data', getattr(result, 'output', ''))
+        json_text = str(raw_output).strip()
+
+        match = re.search(r'\{.*\}', json_text, re.DOTALL)
+        if match:
+            data = json.loads(match.group(0))
+            scelta = data.get("citta_scelta")
+            if any(c["nome"] == scelta for c in citta_list): return scelta
+    except Exception as e:
+        print(f"Errore selezione città tappa LLM: {e}")
+
+    return max(citta_list, key=lambda x: x["popolazione"])["nome"]

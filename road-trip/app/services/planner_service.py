@@ -12,7 +12,7 @@ import requests
 from typing import List, Tuple
 from app.services.geocoding_service import reverse_geocoding, geocoding_citta
 from app.services.user_profile_service import get_user_profile
-from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm
+from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm, seleziona_citta_tappa_con_llm
 from app.config import settings
 import aiohttp
 
@@ -285,14 +285,48 @@ def get_population(city_name):
         "maxRows": 1,
         "username": settings.GEONAMES_USERNAME
     }
-    r = requests.get(url, params=params)
-    data = r.json()
-
-    if "geonames" in data and len(data["geonames"]) > 0:
-        return data["geonames"][0].get("population", 0)
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        data = r.json()
+        if "geonames" in data and len(data["geonames"]) > 0:
+            return data["geonames"][0].get("population", 0)
+    except Exception as e:
+        print(f"     Errore GeoNames get_population: {e}")
 
     return 0
 
+def trova_citta_nel_raggio(lat, lon, radius_km, min_pop=1000):
+    """Trova tutte le città con popolazione > min_pop nel raggio indicato."""
+    url = "http://api.geonames.org/findNearbyPlaceNameJSON"
+    # Il raggio massimo supportato da GeoNames è 300km
+    raggio_valido = min(max(radius_km, 1), 300)
+    params = {
+        "lat": lat,
+        "lng": lon,
+        "radius": raggio_valido,
+        "cities": "cities1000",
+        "username": settings.GEONAMES_USERNAME,
+        "maxRows": 20 # Limite per non esaurire i token LLM e velocizzare la query
+    }
+    citta_trovate = []
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        data = r.json()
+        if "geonames" in data and len(data["geonames"]) > 0:
+            for city in data["geonames"]:
+                pop = int(city.get("population", 0))
+                if pop >= min_pop:
+                    nome_completo = city["name"]
+                    if city.get("countryName"):
+                        nome_completo += f", {city['countryName']}"
+                    citta_trovate.append({
+                        "nome": nome_completo, "lat": float(city["lat"]),
+                        "lon": float(city["lng"]), "popolazione": pop
+                    })
+    except Exception as e:
+        print(f"     Errore GeoNames findNearby (raggio {radius_km}): {e}")
+
+    return citta_trovate
 
 def trova_citta_piu_grande_vicina(lat, lon, min_pop=1000):
     url = "http://api.geonames.org/findNearbyPlaceNameJSON"
@@ -304,7 +338,7 @@ def trova_citta_piu_grande_vicina(lat, lon, min_pop=1000):
         "username": settings.GEONAMES_USERNAME
     }
     try:
-        r = requests.get(url, params=params, timeout=5)
+        r = requests.get(url, params=params, timeout=15)
         data = r.json()
         if "geonames" in data and len(data["geonames"]) > 0:
             # Cerchiamo la prima città nei risultati che supera DAVVERO la soglia
@@ -340,6 +374,26 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
     a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
     c = 2 * asin(sqrt(a))
     return R * c
+
+def trova_indice_piu_vicino(geometry, lat, lon):
+    best_idx = 0
+    best_dist = float("inf")
+    for i, (lon2, lat2) in enumerate(geometry):
+        d = haversine_km(lat, lon, lat2, lon2)
+        if d < best_dist:
+            best_dist = d
+            best_idx = i
+    return best_idx, best_dist
+
+def calcola_distanza_segmento(geometry, idx1, idx2):
+    if idx1 > idx2:
+        idx1, idx2 = idx2, idx1
+    dist = 0.0
+    for i in range(idx1, idx2):
+        lon1, lat1 = geometry[i]
+        lon2, lat2 = geometry[i+1]
+        dist += haversine_km(lat1, lon1, lat2, lon2)
+    return dist
 
 #funzione che divide il viaggio in tappe reali basate sulla distanza massima giornaliera, e costruisce un itinerario giorno per giorno con orari realistici, città di tappa e POI rilevanti lungo la tappa.
 def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) -> List[dict]:
@@ -407,7 +461,8 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
                 "distanza_km": acc_km,
                 "durata_sec": acc_sec,
                 "start_coord": tappa_start,
-                "end_coord": tappa_end
+                "end_coord": tappa_end,
+                "is_obbligatoria": is_tappa_obbligatoria
             })
             # reset per tappa successiva
             acc_km = 0.0
@@ -421,7 +476,8 @@ def costruisci_tappe_reali(percorso: dict, distanza_massima_giornaliera: float) 
             "distanza_km": acc_km,
             "durata_sec": acc_sec,
             "start_coord": tappa_start,
-            "end_coord": tappa_end
+            "end_coord": tappa_end,
+            "is_obbligatoria": False
         })
 
     return tappe
@@ -432,20 +488,8 @@ def punti_lungo_tappa(geometry, start_coord, end_coord, fractions=(1/3, 2/3, 1.0
     Restituisce una lista di punti (lat, lon) lungo la tappa.
     Usa la polyline per trovare i punti più vicini alle frazioni richieste.
     """
-
-    # Trova gli indici nella polyline più vicini a start e end
-    def trova_indice_piu_vicino(lat, lon):
-        best_idx = 0
-        best_dist = float("inf")
-        for i, (lon2, lat2) in enumerate(geometry):
-            d = haversine_km(lat, lon, lat2, lon2)
-            if d < best_dist:
-                best_dist = d
-                best_idx = i
-        return best_idx
-
-    start_idx = trova_indice_piu_vicino(*start_coord)
-    end_idx = trova_indice_piu_vicino(*end_coord)
+    start_idx, _ = trova_indice_piu_vicino(geometry, start_coord[0], start_coord[1])
+    end_idx, _ = trova_indice_piu_vicino(geometry, end_coord[0], end_coord[1])
 
     if start_idx > end_idx:
         start_idx, end_idx = end_idx, start_idx
@@ -510,37 +554,16 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
     interessi_mappati = mappa_interessi(richiesta.preferenze.interessi_poi)
     kinds_base = interessi_mappati
     
+    # NUOVO: tracciamo il punto di partenza reale che si aggiorna in modo dinamico
+    start_coord_reale = tappe[0]["start_coord"]
+    velocita_media_sec_km = durata_totale_sec / distanza_totale if distanza_totale > 0 else 60
+
     for i, tappa in enumerate(tappe):
         print(f"\n--- [Planner] Elaborazione Giorno {i + 1}/{giorni_disponibili} ---")
         giorno_data = data_partenza + timedelta(days=i)
 
-        distanza_giornaliera = tappa["distanza_km"]
-        durata_giornaliera_sec = tappa["durata_sec"]
-
-        # Partenza reale (se il giorno precedente è sforato)
-        ora_partenza = ora_partenza_standard + timedelta(seconds=tempo_extra)
-
-        # Durata base del giorno
-        durata = durata_giornaliera_sec
-
-        pause = int(durata // 7200) * 900
-
-        # Pausa pranzo se si supera mezzogiorno
-        # Se l'arrivo previsto supera le ore 12:00, aggiunge 30 min di pausa pranzo
-        arrivo_previsto = ora_partenza + timedelta(seconds=durata + pause)
-        if arrivo_previsto.hour >= 12:
-            pause += 1800
-
-        # Calcolo arrivo
-        ora_arrivo = ora_partenza + timedelta(seconds=durata + pause)
-
-        # Limite massimo arrivo alle 20:00
-        limite = ora_partenza.replace(hour=20, minute=0)
-        if ora_arrivo > limite:
-            tempo_extra = (ora_arrivo - limite).seconds
-            ora_arrivo = limite
-        else:
-            tempo_extra = 0
+        lat_start, lon_start = start_coord_reale
+        lat_end, lon_end = tappa["end_coord"]
 
         is_last_day = (i == len(tappe) - 1)
 
@@ -550,10 +573,10 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             lon_f, lat_f = geocoding_citta(citta_tappa)
             # Per la ricerca eventi, ci serve il country_code
             _, country_code = reverse_geocoding(lat_f, lon_f)
-        else:
-            # GIORNI INTERMEDI: Logica esistente
+        elif tappa.get("is_obbligatoria", False):
+            # GIORNI INTERMEDI CON TAPPA OBBLIGATORIA (Richiesta esplicitamente dall'utente)
             lat_end, lon_end = tappa["end_coord"]
-            print(f"   > Ricerca città di destinazione...")
+            print(f"   > Ricerca città di destinazione (Tappa Obbligatoria)...")
             citta_tappa, country_code = reverse_geocoding(lat_end, lon_end)
 
             # --- FILTRO: accetta solo città > 1.000 abitanti ---
@@ -576,6 +599,65 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
                     lat_f, lon_f = lat_alt, lon_alt # Aggiorniamo coordinate con la nuova città!
                 else:
                     print(f"   > Nessuna città >1k trovata vicino a {citta_tappa}. Mantengo quella trovata.")
+        else:
+            # GIORNI INTERMEDI NORMALI: Ricerca città nel raggio del 20% della tappa e scelta tramite LLM
+            lat_end, lon_end = tappa["end_coord"]
+            raggio_km = max(tappa["distanza_km"] * 0.20, 10.0) # 20% della tappa (minimo 10km)
+            print(f"   > Ricerca città di destinazione nel raggio di {raggio_km:.1f} km...")
+            
+            citta_vicine = trova_citta_nel_raggio(lat_end, lon_end, radius_km=raggio_km)
+            
+            if citta_vicine:
+                debug_citta = [f"{c['nome']} ({c['popolazione']} ab.)" for c in citta_vicine]
+                print(f"   > [Debug] Città inviate all'LLM: {debug_citta}")
+                nome_scelto = await seleziona_citta_tappa_con_llm(citta_vicine, richiesta.preferenze.interessi_poi)
+                citta_selezionata = next((c for c in citta_vicine if c["nome"] == nome_scelto), citta_vicine[0])
+                citta_tappa = citta_selezionata["nome"]
+                lat_f, lon_f = citta_selezionata["lat"], citta_selezionata["lon"]
+                _, country_code = reverse_geocoding(lat_f, lon_f)
+                print(f"   > L'LLM ha scelto {citta_tappa} (tra {len(citta_vicine)} opzioni)")
+            else:
+                # Fallback in caso di aree super remote senza città nel raggio
+                citta_tappa, country_code = reverse_geocoding(lat_end, lon_end)
+                lat_f, lon_f = lat_end, lon_end
+                pop = get_population(citta_tappa)
+                if pop < 1000:
+                    result = trova_citta_piu_grande_vicina(lat_end, lon_end)
+                    if result:
+                        alternativa, lat_alt, lon_alt = result
+                        citta_tappa = alternativa
+                        lat_f, lon_f = lat_alt, lon_alt
+                print(f"   > Nessuna città nel raggio, fallback: {citta_tappa}")
+
+        # --- RICALCOLO DISTANZA E DURATA REALI ---
+        idx_start, _ = trova_indice_piu_vicino(percorso["geometry"], lat_start, lon_start)
+        idx_end, dist_uscita = trova_indice_piu_vicino(percorso["geometry"], lat_f, lon_f)
+        dist_su_strada = calcola_distanza_segmento(percorso["geometry"], idx_start, idx_end)
+        
+        distanza_giornaliera = dist_su_strada + dist_uscita
+        if distanza_giornaliera < 1:
+            distanza_giornaliera = tappa["distanza_km"] # Fallback di sicurezza
+            
+        durata = distanza_giornaliera * velocita_media_sec_km
+        
+        # Il giorno successivo partirà ESATTAMENTE da questa città!
+        start_coord_reale = (lat_f, lon_f)
+        
+        # --- CALCOLO ORARI CON DURATA AGGIORNATA ---
+        ora_partenza = ora_partenza_standard + timedelta(seconds=tempo_extra)
+        pause = int(durata // 7200) * 900
+        
+        arrivo_previsto = ora_partenza + timedelta(seconds=durata + pause)
+        if arrivo_previsto.hour >= 12:
+            pause += 1800
+
+        ora_arrivo = ora_partenza + timedelta(seconds=durata + pause)
+        limite = ora_partenza.replace(hour=20, minute=0)
+        if ora_arrivo > limite:
+            tempo_extra = (ora_arrivo - limite).seconds
+            ora_arrivo = limite
+        else:
+            tempo_extra = 0
 
         poi_dict = {}
         poi_ordinati = []
@@ -613,8 +695,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         else:
             # GIORNI INTERMEDI: Logica precedente con ricerca a metà tappa e nella città di arrivo.
             geometry = percorso["geometry"]
-            lat_start, lon_start = tappa["start_coord"]
-            punti = punti_lungo_tappa(geometry, (lat_start, lon_start), (lat_end, lon_end), fractions=(0.5,))
+            punti = punti_lungo_tappa(geometry, (lat_start, lon_start), (lat_f, lon_f), fractions=(0.5,))
             
             for lat_p, lon_p in punti:
                 risultati = cerca_poi(lat=lat_p, lon=lon_p, kinds=kinds_base, radius=8000, limit=200)
