@@ -5,14 +5,14 @@ from datetime import datetime, timedelta, date
 import asyncio
 from app.models import TripPreferences, Stop, TripPlan, DayPlan, TripRequest
 from fastapi import HTTPException
-from app.services.poi_service import cerca_poi, mappa_interessi
+from app.services.poi_service import cerca_poi, mappa_interessi, cerca_strutture
 import math
 from app.services.event_service import cerca_eventi
 import requests
 from typing import List, Tuple
 from app.services.geocoding_service import reverse_geocoding, geocoding_citta
 from app.services.user_profile_service import get_user_profile
-from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm, seleziona_citta_tappa_con_llm
+from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm, seleziona_citta_tappa_con_llm, seleziona_hotel_ristoranti_con_llm
 from app.config import settings
 import aiohttp
 
@@ -726,6 +726,21 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         lista_eventi = cerca_eventi(citta_tappa, country_code, giorno_data, profilo.interessi_eventi)
         eventi = await seleziona_eventi_con_llm(lista_eventi, profilo.interessi_eventi, citta_tappa)
         
+        # --- SELEZIONE HOTEL E RISTORANTI TRAMITE LLM ---
+        budget = richiesta.budget_hotel_cibo
+        hotel = []
+        ristoranti = []
+        if budget not in ["nessuno", "non specificato"]:
+            print(f"   > Ricerca Hotel e Ristoranti (budget: {budget})...")
+            lista_hotel = cerca_strutture(lat=lat_f, lon=lon_f, kind="accomodations", radius=15000, limit=40)
+            lista_ristoranti = cerca_strutture(lat=lat_f, lon=lon_f, kind="foods", radius=15000, limit=40)
+            
+            risultati_hr = await seleziona_hotel_ristoranti_con_llm(
+                lista_hotel, lista_ristoranti, budget, citta_tappa
+            )
+            hotel = risultati_hr.get("hotel", [])
+            ristoranti = risultati_hr.get("ristoranti", [])
+
         immagine_url = None
 
         #  PRIORITÀ: POI iconici → cerca sempre su Wikipedia EN
@@ -775,7 +790,9 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             poi=poi,
             eventi=eventi,
             citta_tappa=citta_tappa,
-            immagine_url=immagine_url
+            immagine_url=immagine_url,
+            hotel=hotel,
+            ristoranti=ristoranti
         )
 
         giorni.append(giorno)

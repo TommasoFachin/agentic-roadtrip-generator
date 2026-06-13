@@ -86,6 +86,44 @@ def cerca_poi(lat, lon, radius=30000, kinds=None, limit=100, min_rate=None):
     return poi_list
 
 
+def cerca_strutture(lat, lon, kind="accomodations", radius=15000, limit=40):
+    """
+    Cerca hotel o ristoranti in base alla categoria richiesta.
+    kind: "accomodations" oppure "foods"
+    """
+    params = {
+        "apikey": OPENTRIPMAP_API_KEY,
+        "radius": radius,
+        "lon": lon,
+        "lat": lat,
+        "kinds": kind,
+        "limit": limit,
+        "orderby": "distance",
+        "format": "json",
+    }
+    url = f"{BASE_URL}/radius"
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            strutture = []
+            nomi_visti = set()
+            for item in data:
+                name = item.get("name", "").strip()
+                if name and name not in nomi_visti:
+                    nomi_visti.add(name)
+                    strutture.append({
+                        "name": name,
+                        "rate": item.get("rate", 0),
+                        "lat": item.get("point", {}).get("lat"),
+                        "lon": item.get("point", {}).get("lon")
+                    })
+            return strutture
+    except Exception as e:
+        print(f"     [OpenTripMap] Errore API strutture ({kind}): {e}")
+    return []
+
+
 # funzione che mappa gli interessi dell’utente alle categorie di OpenTripMap, 
 # restituendo una lista di categorie da usare nella ricerca dei POI.
 def mappa_interessi(interessi_poi):

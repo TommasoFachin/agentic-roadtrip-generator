@@ -123,6 +123,7 @@ Usa SOLO queste chiavi per gli aggiornamenti:
    - tappe_obbligatorie (lista di stringhe con i nomi esatti delle città)
    - luogo_partenza (stringa)
    - luogo_destinazione (stringa)
+   - budget_hotel_cibo (stringa)
 
 2) Se l'utente chiede di RIMUOVERE un elemento (es. "togli Berlino"), rimuovilo dalla lista corrispondente del Profilo attuale e restituisci la nuova lista in "aggiornamenti".
 
@@ -631,3 +632,106 @@ async def seleziona_citta_tappa_con_llm(citta_list: list, interessi: list) -> st
         print(f"Errore selezione città tappa LLM: {e}")
 
     return max(citta_list, key=lambda x: x["popolazione"])["nome"]
+
+
+# ---------------------------------------------------------
+# AGENTE 6 — SELEZIONE HOTEL E RISTORANTI
+# ---------------------------------------------------------
+
+PROMPT_HOTEL_CIBO = """
+Sei un assistente di viaggio esperto. Il tuo compito è selezionare i MIGLIORI 3 alloggi e i MIGLIORI 3 ristoranti per l'utente, basandoti ESATTAMENTE sul suo budget.
+
+Riceverai:
+- La città della tappa.
+- Il budget ("economico", "medio", "alto").
+- Una lista di hotel/ostelli.
+- Una lista di ristoranti/pub.
+
+REGOLE BUDGET:
+- "economico": Ostelli, guesthouse, B&B economici, fast food, pub, street food.
+- "medio": Hotel 3 stelle, B&B curati, trattorie, ristoranti tipici.
+- "alto": Hotel 4/5 stelle, resort, ristoranti fine dining, location eleganti.
+Cerca di dedurre il costo dal nome della struttura o dal suo genere.
+
+REGOLE RATING E QUALITÀ:
+- DEVI selezionare prioritariamente strutture con rating elevato (3 o superiore).
+- NON selezionare strutture con rating 1 o 2 a meno che non siano le UNICHE disponibili nella città per quel budget.
+- Il rating (r) indica la popolarità e la qualità: più è alto, migliore è la scelta.
+
+Seleziona massimo 3 hotel e 3 ristoranti.
+
+Rispondi SOLO con un JSON valido con questa struttura:
+{
+  "hotel_selezionati": [
+    {"nome": "Nome Hotel 1"}
+  ],
+  "ristoranti_selezionati": [
+    {"nome": "Nome Ristorante 1"}
+  ]
+}
+NON aggiungere testo fuori dal JSON.
+"""
+
+llm_hotel_cibo = Agent(
+    model=model,
+    instructions=PROMPT_HOTEL_CIBO
+)
+
+async def seleziona_hotel_ristoranti_con_llm(lista_hotel: list, lista_ristoranti: list, budget: str, citta_tappa: str) -> dict:
+    if budget in ["nessuno", "non specificato"] or (not lista_hotel and not lista_ristoranti):
+        return {"hotel": [], "ristoranti": []}
+
+    print(f"   > Analisi Hotel/Ristoranti (Budget: {budget}) tramite LLM in corso...")
+
+    # Ordiniamo le liste originali per rating decrescente
+    hotel_ordinati = sorted(lista_hotel, key=lambda x: x.get("rate", 0), reverse=True)
+    ristoranti_ordinati = sorted(lista_ristoranti, key=lambda x: x.get("rate", 0), reverse=True)
+
+    # Compattiamo per risparmiare Token
+    hotel_compatti = [{"n": h.get("name"), "r": float(h.get("rate", 0))} for h in hotel_ordinati[:40] if h.get("name")]
+    ristoranti_compatti = [{"n": r.get("name"), "r": float(r.get("rate", 0))} for r in ristoranti_ordinati[:40] if r.get("name")]
+
+    prompt = f"Città: {citta_tappa}\nBudget: {budget}\nHotel:\n{json.dumps(hotel_compatti, ensure_ascii=False)}\nRistoranti:\n{json.dumps(ristoranti_compatti, ensure_ascii=False)}"
+
+    try:
+        result = await asyncio.wait_for(llm_hotel_cibo.run(prompt), timeout=25.0)
+        raw_output = getattr(result, 'data', getattr(result, 'output', ''))
+        json_text = str(raw_output).strip()
+
+        match = re.search(r'\{.*\}', json_text, re.DOTALL)
+        if match:
+            json_text = match.group(0)
+            json_text = re.sub(r',\s*\]', ']', json_text)
+            json_text = re.sub(r',\s*\}', '}', json_text)
+            data = json.loads(json_text)
+            
+            # Riconduciamo i nomi estratti agli oggetti originali completi (senza duplicati)
+            hotel_finali = []
+            nomi_aggiunti_h = set()
+            for sel in data.get("hotel_selezionati", [])[:3]:
+                nome_sel = sel.get("nome")
+                if nome_sel and nome_sel not in nomi_aggiunti_h:
+                    for h in lista_hotel:
+                        if h.get("name") == nome_sel:
+                            hotel_finali.append(h)
+                            nomi_aggiunti_h.add(nome_sel)
+                            break
+            
+            ristoranti_finali = []
+            nomi_aggiunti_r = set()
+            for sel in data.get("ristoranti_selezionati", [])[:3]:
+                nome_sel = sel.get("nome")
+                if nome_sel and nome_sel not in nomi_aggiunti_r:
+                    for r in lista_ristoranti:
+                        if r.get("name") == nome_sel:
+                            ristoranti_finali.append(r)
+                            nomi_aggiunti_r.add(nome_sel)
+                            break
+            
+            return {"hotel": hotel_finali, "ristoranti": ristoranti_finali}
+            
+    except Exception as e:
+        print(f"Errore selezione Hotel/Cibo LLM: {e}")
+        
+    # Fallback se LLM fallisce: restituisce i primi 3
+    return {"hotel": lista_hotel[:3], "ristoranti": lista_ristoranti[:3]}

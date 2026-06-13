@@ -64,7 +64,7 @@ const DayCard = ({ day }) => {
 
         {/* Eventi */}
         {day.eventi && day.eventi.length > 0 && (
-          <div>
+          <div className="mb-6">
             <h3 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
               <span className="mr-2 text-xl">🎵</span> 
               Eventi Serali
@@ -73,6 +73,50 @@ const DayCard = ({ day }) => {
               {day.eventi.map((e, idx) => (
                 <li key={idx} className="flex items-center bg-purple-50 p-3 rounded-lg text-sm text-purple-900 border border-purple-100">
                   <span className="font-semibold">{e.name || e.nome}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Hotel */}
+        {day.hotel && day.hotel.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
+              <span className="mr-2 text-xl">🛏️</span> 
+              Dove dormire
+            </h3>
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {day.hotel.map((h, idx) => (
+                <li key={idx} className="flex flex-col bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                  <div className="flex justify-between items-start">
+                    <span className="font-medium text-gray-800">{h.name || h.nome}</span>
+                    {h.rate && (
+                      <span className="text-xs font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">⭐ {h.rate}</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Ristoranti */}
+        {day.ristoranti && day.ristoranti.length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold text-gray-800 flex items-center mb-3">
+              <span className="mr-2 text-xl">🍴</span> 
+              Dove mangiare
+            </h3>
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {day.ristoranti.map((r, idx) => (
+                <li key={idx} className="flex flex-col bg-orange-50 p-3 rounded-lg border border-orange-100">
+                  <div className="flex justify-between items-start">
+                    <span className="font-medium text-gray-800">{r.name || r.nome}</span>
+                    {r.rate && (
+                      <span className="text-xs font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">⭐ {r.rate}</span>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>

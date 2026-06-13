@@ -87,6 +87,11 @@ async def chatbot_messaggio(payload: ChatbotMessage):
                 # Sostituiamo interamente la lista (l'LLM restituisce la lista aggiornata)
                 profilo_dict[campo] = [str(v) for v in valori_raw]
 
+        # AGGIORNAMENTO PER CAMPI STRINGA SINGOLI
+        for campo_str in ["luogo_partenza", "luogo_destinazione", "budget_hotel_cibo"]:
+            if campo_str in aggiornamenti:
+                profilo_dict[campo_str] = str(aggiornamenti[campo_str])
+
         # aggiorna il profilo completo
         profilo = update_user_profile(profilo_dict)
 

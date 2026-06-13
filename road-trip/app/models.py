@@ -15,6 +15,7 @@ class TripRequest(BaseModel):
     preferenze: TripPreferences
     tappe_intermedie: Optional[List[str]] = []
     tappe_intermedie_utente: Optional[List[str]] = []
+    budget_hotel_cibo: str = "non specificato"
 
 
 
@@ -37,6 +38,8 @@ class DayPlan(BaseModel):
     eventi: list | None = None
     citta_tappa: str | None = None
     immagine_url: str | None = None
+    hotel: list | None = None
+    ristoranti: list | None = None
 
     
 
@@ -51,3 +54,4 @@ class UserProfile(BaseModel):
     preferenze_viaggio: list[str] = []
     preferenze_cibo: list[str] = []
     tappe_obbligatorie: list[str] = []
+    budget_hotel_cibo: str = "non specificato"

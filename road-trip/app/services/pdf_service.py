@@ -119,6 +119,48 @@ def genera_pdf_itinerario(itinerario, documento_testuale):
                 if y < 100:
                     c.showPage()
                     y = 800
+                    
+        # --- HOTEL ---
+        if getattr(giorno, "hotel", None):
+            if y < 150:
+                c.showPage()
+                y = 800
+            
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(70, y, "Dove dormire:")
+            y -= 20
+            c.setFont("Helvetica", 10)
+            for h in giorno.hotel:
+                nome_hotel = h.get("name", "(Senza nome)").encode("latin-1", "replace").decode("latin-1")
+                rate_val = h.get("rate", 0)
+                rating_str = f" [Rating: {rate_val}/7]" if rate_val else ""
+                
+                c.drawString(90, y, f"- {nome_hotel}{rating_str}")
+                y -= 15
+                if y < 100:
+                    c.showPage()
+                    y = 800
+
+        # --- RISTORANTI ---
+        if getattr(giorno, "ristoranti", None):
+            if y < 150:
+                c.showPage()
+                y = 800
+            
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(70, y, "Dove mangiare:")
+            y -= 20
+            c.setFont("Helvetica", 10)
+            for r in giorno.ristoranti:
+                nome_rist = r.get("name", "(Senza nome)").encode("latin-1", "replace").decode("latin-1")
+                rate_val = r.get("rate", 0)
+                rating_str = f" [Rating: {rate_val}/7]" if rate_val else ""
+                
+                c.drawString(90, y, f"- {nome_rist}{rating_str}")
+                y -= 15
+                if y < 100:
+                    c.showPage()
+                    y = 800
 
         # Evitiamo che il testo del giorno successivo si sovrapponga all'immagine
         if image_drawn:
