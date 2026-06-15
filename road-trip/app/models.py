@@ -37,6 +37,8 @@ class DayPlan(BaseModel):
     poi: list | None = None
     eventi: list | None = None
     citta_tappa: str | None = None
+    lat: float | None = None
+    lon: float | None = None
     immagine_url: str | None = None
     hotel: list | None = None
     ristoranti: list | None = None
@@ -47,6 +49,7 @@ class TripPlan(BaseModel):
     distanza_totale_km: float
     durata_totale_ore: float
     giorni: List[DayPlan]
+    geometry: list[list[float]] | None = None
 
 class UserProfile(BaseModel):
     interessi_poi: list[str] = []

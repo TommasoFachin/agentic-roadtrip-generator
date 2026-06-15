@@ -790,6 +790,8 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             poi=poi,
             eventi=eventi,
             citta_tappa=citta_tappa,
+            lat=lat_f,
+            lon=lon_f,
             immagine_url=immagine_url,
             hotel=hotel,
             ristoranti=ristoranti
@@ -800,7 +802,8 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
     return TripPlan(
         distanza_totale_km=round(distanza_totale, 2),
         durata_totale_ore=round(durata_totale_sec / 3600, 2),
-        giorni=giorni
+        giorni=giorni,
+        geometry=percorso.get("geometry")
     )
 
 #funzione che, dato la distanza totale e la distanza massima giornaliera, calcola il numero di giorni necessari per completare il viaggio, e verifica se è fattibile con i giorni disponibili.

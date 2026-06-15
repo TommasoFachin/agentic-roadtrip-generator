@@ -13,6 +13,7 @@ from pydantic_ai.providers.ollama import OllamaProvider
 from openai import AsyncOpenAI
 from app.models import TripRequest
 from datetime import datetime
+from app.services.geocoding_service import geocoding_citta
 
 # ---------------------------------------------------------
 # AGENTE 1 — INTERPRETAZIONE RICHIESTE DI VIAGGIO
@@ -555,12 +556,17 @@ Rispondi SOLO con JSON valido:
 
             # 2) Se NON esiste → aggiungi POI “virtuale” (landmark iconico)
             if not trovato:
+                # Cerchiamo di recuperare le coordinate per mostrarlo sulla mappa
+                try:
+                    p_lon, p_lat = geocoding_citta(f"{nome_poi}, {citta_tappa}")
+                except:
+                    p_lon, p_lat = None, None
                 poi_finali.append({
                     "name": nome_poi,
                     "kind": "iconic",
                     "rate": 10,
-                    "lat": None,
-                    "lon": None
+                    "lat": p_lat,
+                    "lon": p_lon
                 })
 
             nomi_gia_aggiunti.add(nome_poi)

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import DayCard from './DayCard';
+import MapComponent from './MapComponent';
 
 // Riceve lo storico messaggi come prop (array di stringhe) dal componente genitore (App.jsx o layout)
 const ItineraryViewer = ({ chatMessages }) => {
@@ -173,6 +174,14 @@ const ItineraryViewer = ({ chatMessages }) => {
           {itinerary.giorni.map((day) => (
             <DayCard key={day.giorno} day={day} />
           ))}
+
+          {/* Mappa interattiva in fondo all'itinerario */}
+          <div className="mt-8 mb-12">
+            <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">🗺️</span> Mappa del Percorso
+            </h3>
+            <MapComponent itinerary={itinerary} />
+          </div>
         </div>
       )}
     </div>
