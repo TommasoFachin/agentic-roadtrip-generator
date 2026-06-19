@@ -415,7 +415,7 @@ async def seleziona_eventi_con_llm(lista_eventi: list, interessi_eventi: list, c
 
     if not interessi_eventi:
         print("     Nessun interesse pertinente per gli eventi trovato nel profilo. Salto selezione.")
-        return []
+        return lista_eventi[:2]
 
     # --- COMPRESSIONE EVENTI PER RISPARMIARE TOKEN ---
     eventi_compatti = []
@@ -451,14 +451,33 @@ Rispondi SOLO con JSON valido.
         json_text = str(raw_output).strip()
 
         match = re.search(r'\{.*\}', json_text, re.DOTALL)
-        if not match: return []
+        if not match:
+            return lista_eventi[:2]
 
         json_text = re.sub(r',\s*\]', ']', match.group(0))
         data = json.loads(json_text)
-        return data.get("eventi_selezionati", [])
+        eventi_selezionati = data.get("eventi_selezionati", [])
+
+        if not eventi_selezionati:
+            return lista_eventi[:2]
+
+        eventi_finali = []
+        nomi_gia_aggiunti = set()
+        for sel in eventi_selezionati:
+            nome_sel = sel.get("nome") if isinstance(sel, dict) else None
+            if not nome_sel or nome_sel in nomi_gia_aggiunti:
+                continue
+
+            for evento in lista_eventi:
+                if evento.get("name") == nome_sel:
+                    eventi_finali.append(evento)
+                    nomi_gia_aggiunti.add(nome_sel)
+                    break
+
+        return eventi_finali or lista_eventi[:2]
     except Exception as e:
         print(f"     Errore selezione Eventi: {e}")
-        return []
+        return lista_eventi[:2]
 
 async def seleziona_poi_con_llm(lista_poi: list, profilo: dict, citta_tappa: str) -> list:
 

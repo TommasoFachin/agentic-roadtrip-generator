@@ -1,4 +1,4 @@
-import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { useEffect } from 'react';
@@ -23,6 +23,18 @@ function MapUpdater({ geometry }) {
   return null;
 }
 
+function MapClickHandler({ onMapClick }) {
+  useMapEvents({
+    click(event) {
+      if (onMapClick) {
+        onMapClick(event.latlng);
+      }
+    },
+  });
+
+  return null;
+}
+
 const createIcon = (color) => new L.Icon({
   iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -39,7 +51,7 @@ const icons = {
   restaurant: createIcon('red')
 };
 
-export default function MapComponent({ itinerary }) {
+export default function MapComponent({ itinerary, onMapClick }) {
   if (!itinerary || !itinerary.geometry) {
     return (
       <div className="flex items-center justify-center bg-gray-100 text-gray-400 rounded-xl border-2 border-dashed border-gray-300" style={{ height: '500px' }}>
@@ -52,7 +64,10 @@ export default function MapComponent({ itinerary }) {
   const positions = itinerary.geometry.map(coord => [coord[1], coord[0]]);
 
   return (
-    <div style={{ height: '500px', width: '100%' }} className="rounded-xl overflow-hidden shadow-lg border border-gray-200">
+    <div style={{ height: '500px', width: '100%' }} className="rounded-xl overflow-hidden shadow-lg border border-gray-200 relative">
+      <div className="absolute top-3 left-3 z-[1000] bg-white/95 backdrop-blur px-3 py-2 rounded-full text-xs font-semibold text-slate-700 shadow-md border border-slate-200">
+        Clicca sulla mappa per aggiungere una tappa
+      </div>
       <MapContainer 
         center={positions[0]} 
         zoom={6} 
@@ -65,6 +80,7 @@ export default function MapComponent({ itinerary }) {
         
         <Polyline positions={positions} color="#4f46e5" weight={5} opacity={0.7} />
         <MapUpdater geometry={itinerary.geometry} />
+        <MapClickHandler onMapClick={onMapClick} />
 
         {itinerary.giorni.map((giorno, gIdx) => (
           <div key={`day-group-${gIdx}`}>

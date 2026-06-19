@@ -6,10 +6,31 @@ import MapComponent from './MapComponent';
 const ItineraryViewer = ({ chatMessages }) => {
   const [loading, setLoading] = useState(false);
   const [itinerary, setItinerary] = useState(null);
+  const [tripRequest, setTripRequest] = useState(null);
   const [error, setError] = useState(null);
   const [loadingStep, setLoadingStep] = useState("");
   const [showBudgetForm, setShowBudgetForm] = useState(false);
   const [selectedBudget, setSelectedBudget] = useState("nessuno");
+  const [manualStops, setManualStops] = useState([]);
+
+  const loadItinerary = async (requestPayload, stepMessage) => {
+    setLoadingStep(stepMessage);
+    const plannerResponse = await fetch("http://127.0.0.1:8000/genera-itinerario", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestPayload)
+    });
+
+    const data = await plannerResponse.json();
+
+    if (!plannerResponse.ok || data.errore) {
+      throw new Error(data.errore ? `${data.errore}: ${data.dettagli.motivo}` : "Errore nella generazione dell'itinerario.");
+    }
+
+    setTripRequest(requestPayload);
+    setItinerary(data.itinerario);
+    return data.itinerario;
+  };
 
   const startPlanning = () => {
     // Controllo sicurezza: assicuriamoci ci siano messaggi
@@ -25,6 +46,7 @@ const ItineraryViewer = ({ chatMessages }) => {
     setLoading(true);
     setError(null);
     setItinerary(null);
+    setManualStops([]);
 
     try {
       // 1. Uniamo i messaggi della chat in un unico testo
@@ -42,25 +64,67 @@ const ItineraryViewer = ({ chatMessages }) => {
       const tripRequest = await llmResponse.json();
 
       // Aggiungiamo la scelta del budget prima di inviare al planner
-      tripRequest.budget_hotel_cibo = selectedBudget;
+      const requestWithBudget = {
+        ...tripRequest,
+        budget_hotel_cibo: selectedBudget,
+        tappe_intermedie_utente: tripRequest.tappe_intermedie_utente || []
+      };
 
       // 3. Chiamata al Planner (Routing, POI, Eventi)
-      setLoadingStep("Calcolo del percorso, ricerca POI ed eventi in corso...");
-      const plannerResponse = await fetch("http://127.0.0.1:8000/genera-itinerario", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(tripRequest)
-      });
+      await loadItinerary(requestWithBudget, "Calcolo del percorso, ricerca POI ed eventi in corso...");
+      setManualStops(requestWithBudget.tappe_intermedie_utente);
 
-      const data = await plannerResponse.json();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setLoadingStep("");
+    }
+  };
 
-      if (!plannerResponse.ok || data.errore) {
-        throw new Error(data.errore ? `${data.errore}: ${data.dettagli.motivo}` : "Errore nella generazione dell'itinerario.");
+  const handleMapClick = async (latlng) => {
+    if (!tripRequest) {
+      setError("Genera prima un itinerario, poi puoi aggiungere tappe dalla mappa.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      setLoadingStep("Riconosco la città del click...");
+      const geoResponse = await fetch(
+        `http://127.0.0.1:8000/reverse-geocoding?lat=${latlng.lat}&lon=${latlng.lng}`
+      );
+
+      if (!geoResponse.ok) {
+        throw new Error("Impossibile tradurre il punto cliccato in una tappa valida.");
       }
 
-      // Tutto è andato a buon fine, salviamo l'itinerario!
-      setItinerary(data.itinerario);
+      const geoData = await geoResponse.json();
+      const nuovaTappa = geoData.citta;
 
+      if (!nuovaTappa || nuovaTappa === "In viaggio") {
+        throw new Error("Non sono riuscito a trovare una città vicina al punto selezionato.");
+      }
+
+      const normalizza = (value) => value.split(',')[0].trim().toLowerCase();
+      const tappeEsistenti = tripRequest.tappe_intermedie_utente || [];
+
+      if (tappeEsistenti.some((tappa) => normalizza(tappa) === normalizza(nuovaTappa))) {
+        setLoadingStep("");
+        setError(`La tappa ${nuovaTappa} è già presente nell'itinerario.`);
+        return;
+      }
+
+      const updatedStops = [...tappeEsistenti, nuovaTappa];
+      const updatedRequest = {
+        ...tripRequest,
+        tappe_intermedie_utente: updatedStops,
+      };
+
+      setManualStops(updatedStops);
+      await loadItinerary(updatedRequest, `Aggiungo ${nuovaTappa} e ricalcolo il percorso...`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -180,7 +244,19 @@ const ItineraryViewer = ({ chatMessages }) => {
             <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center">
               <span className="mr-2">🗺️</span> Mappa del Percorso
             </h3>
-            <MapComponent itinerary={itinerary} />
+            <MapComponent itinerary={itinerary} onMapClick={handleMapClick} />
+            {manualStops.length > 0 && (
+              <div className="mt-4 bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-blue-900">
+                <div className="font-semibold mb-2">Tappe aggiunte con il click</div>
+                <div className="flex flex-wrap gap-2">
+                  {manualStops.map((stop) => (
+                    <span key={stop} className="px-3 py-1 rounded-full bg-white border border-blue-200 shadow-sm">
+                      {stop}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

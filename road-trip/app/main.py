@@ -38,6 +38,15 @@ app.include_router(user_profile_router)
 async def interpreta(payload: InterpretationRequest):
     return await interpreta_richiesta(payload.testo)
 
+
+@app.get("/reverse-geocoding")
+async def reverse_geocoding_endpoint(lat: float, lon: float):
+    citta, country_code = await run_in_threadpool(reverse_geocoding, lat, lon)
+    return {
+        "citta": citta,
+        "country_code": country_code,
+    }
+
 #utility pe rpreparare i dati del viaggio
 def _prepara_dati_viaggio(richiesta: TripRequest):
 
