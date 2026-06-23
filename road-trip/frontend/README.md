@@ -121,6 +121,6 @@ Il frontend sarà accessibile all'indirizzo indicato nel terminale (solitamente 
 
 ---
 
-## ✅ Utilizzo
+## Utilizzo
 
 Una volta che sia il backend che il frontend sono in esecuzione, apri l'URL del frontend nel tuo browser. Ora puoi iniziare a pianificare il tuo viaggio!
