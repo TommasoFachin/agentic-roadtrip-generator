@@ -306,7 +306,7 @@ def trova_citta_nel_raggio(lat, lon, radius_km, min_pop=1000):
         "radius": raggio_valido,
         "cities": "cities1000",
         "username": settings.GEONAMES_USERNAME,
-        "maxRows": 20 # Limite per non esaurire i token LLM e velocizzare la query
+        "maxRows": 100 # Aumentato per trovare anche le grandi città un po' più lontane
     }
     citta_trovate = []
     try:
@@ -600,18 +600,35 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
                 else:
                     print(f"   > Nessuna città >1k trovata vicino a {citta_tappa}. Mantengo quella trovata.")
         else:
-            # GIORNI INTERMEDI NORMALI: Ricerca città nel raggio del 20% della tappa e scelta tramite LLM
+            # GIORNI INTERMEDI NORMALI: Ricerca città nel raggio del 30% della tappa e scelta tramite LLM
             lat_end, lon_end = tappa["end_coord"]
-            raggio_km = max(tappa["distanza_km"] * 0.20, 10.0) # 20% della tappa (minimo 10km)
-            print(f"   > Ricerca città di destinazione nel raggio di {raggio_km:.1f} km...")
-            
-            citta_vicine = trova_citta_nel_raggio(lat_end, lon_end, radius_km=raggio_km)
-            
+            # Aumentiamo il raggio per avere più chance di trovare grandi città
+            raggio_km = 75.0 # Raggio fisso e ampio per trovare sempre città importanti
+            print(f"   > Ricerca città di destinazione in un raggio di {raggio_km:.1f} km...")
+
+            # 1. Tentativo con popolazione > 30.000
+            citta_vicine = trova_citta_nel_raggio(lat_end, lon_end, radius_km=raggio_km, min_pop=30000)
+
+            # 2. Fallback se non si trovano città grandi
+            if not citta_vicine:
+                print(f"   > Nessuna città con >30k abitanti trovata. Riprovo con città >1k.")
+                citta_vicine = trova_citta_nel_raggio(lat_end, lon_end, radius_km=raggio_km, min_pop=1000)
+
             if citta_vicine:
-                debug_citta = [f"{c['nome']} ({c['popolazione']} ab.)" for c in citta_vicine]
+                # ORDINAMENTO INTELLIGENTE: Priorità a popolazione, poi distanza.
+                # Aggiungiamo la distanza per l'ordinamento.
+                for c in citta_vicine:
+                    c['distanza_dal_punto'] = haversine_km(lat_end, lon_end, c['lat'], c['lon'])
+                
+                # Ordina per popolazione (decrescente) e poi per distanza (crescente)
+                citta_ordinate = sorted(citta_vicine, key=lambda x: (-x['popolazione'], x['distanza_dal_punto']))
+                
+                # Invia all'LLM solo le prime 20 città più rilevanti
+                citta_da_inviare = citta_ordinate[:20]
+                debug_citta = [f"{c['nome']} ({c['popolazione']} ab.)" for c in citta_da_inviare]
                 print(f"   > [Debug] Città inviate all'LLM: {debug_citta}")
-                nome_scelto = await seleziona_citta_tappa_con_llm(citta_vicine, richiesta.preferenze.interessi_poi)
-                citta_selezionata = next((c for c in citta_vicine if c["nome"] == nome_scelto), citta_vicine[0])
+                nome_scelto = await seleziona_citta_tappa_con_llm(citta_da_inviare, richiesta.preferenze.interessi_poi)
+                citta_selezionata = next((c for c in citta_da_inviare if c["nome"] == nome_scelto), citta_da_inviare[0])
                 citta_tappa = citta_selezionata["nome"]
                 lat_f, lon_f = citta_selezionata["lat"], citta_selezionata["lon"]
                 _, country_code = reverse_geocoding(lat_f, lon_f)
