@@ -606,12 +606,12 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             raggio_km = 75.0 # Raggio fisso e ampio per trovare sempre città importanti
             print(f"   > Ricerca città di destinazione in un raggio di {raggio_km:.1f} km...")
 
-            # 1. Tentativo con popolazione > 30.000
-            citta_vicine = trova_citta_nel_raggio(lat_end, lon_end, radius_km=raggio_km, min_pop=30000)
+            # 1. Tentativo con popolazione > 20.000 (come da tua richiesta)
+            citta_vicine = trova_citta_nel_raggio(lat_end, lon_end, radius_km=raggio_km, min_pop=20000)
 
             # 2. Fallback se non si trovano città grandi
             if not citta_vicine:
-                print(f"   > Nessuna città con >30k abitanti trovata. Riprovo con città >1k.")
+                print(f"   > Nessuna città con >20k abitanti trovata. Riprovo con città >1k.")
                 citta_vicine = trova_citta_nel_raggio(lat_end, lon_end, radius_km=raggio_km, min_pop=1000)
 
             if citta_vicine:
