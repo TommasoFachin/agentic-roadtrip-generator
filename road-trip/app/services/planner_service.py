@@ -602,8 +602,9 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         else:
             # GIORNI INTERMEDI NORMALI: Ricerca città nel raggio del 30% della tappa e scelta tramite LLM
             lat_end, lon_end = tappa["end_coord"]
-            # Aumentiamo il raggio per avere più chance di trovare grandi città
-            raggio_km = 75.0 # Raggio fisso e ampio per trovare sempre città importanti
+            # Raggio dinamico: 30% della tappa, con un minimo di 30km e un massimo di 75km.
+            raggio_percentuale = tappa["distanza_km"] * 0.30
+            raggio_km = max(30.0, min(raggio_percentuale, 100.0))
             print(f"   > Ricerca città di destinazione in un raggio di {raggio_km:.1f} km...")
 
             # 1. Tentativo con popolazione > 20.000 (come da tua richiesta)
