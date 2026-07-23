@@ -92,12 +92,26 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
     # Routing: distanza reale + durata
     percorso = calcola_percorso(coordinate_percorso)
 
-    # STEP 3.1 — Calcolo tappe in base ai km/giorno
-    distanza_massima = richiesta.preferenze.distanza_massima_giornaliera
-    tappe_info = calcola_tappe(
-        distanza_km=percorso["distanza_km"],
-        distanza_massima_giornaliera=distanza_massima
-    )
+    # --- LOGICA PER ADATTARE IL VIAGGIO ALLA DURATA RICHIESTA ---
+    distanza_massima_utente = richiesta.preferenze.distanza_massima_giornaliera
+    giorni_disponibili_utente = (richiesta.data_arrivo - richiesta.data_partenza).days + 1
+
+    # Calcoliamo la distanza media giornaliera necessaria per riempire tutti i giorni
+    distanza_ideale_giornaliera = 0
+    if giorni_disponibili_utente > 0:
+        distanza_ideale_giornaliera = percorso["distanza_km"] / giorni_disponibili_utente
+
+    # Se la distanza ideale è inferiore al massimo dell'utente, la usiamo per "allungare" il viaggio.
+    # Altrimenti, usiamo il massimo dell'utente (il viaggio sarà più breve o non fattibile).
+    if 0 < distanza_ideale_giornaliera < distanza_massima_utente:
+        print(f"INFO: Adatto il viaggio a {giorni_disponibili_utente} giorni. Distanza giornaliera impostata a {int(distanza_ideale_giornaliera)} km.")
+        distanza_massima_effettiva = distanza_ideale_giornaliera
+    else:
+        distanza_massima_effettiva = distanza_massima_utente
+
+    # Usiamo la distanza effettiva per il calcolo delle tappe
+    tappe_info = calcola_tappe(percorso["distanza_km"], distanza_massima_effettiva)
+    # ----------------------------------------------------------------
 
     # Calcolo giorni disponibili
     giorni_disponibili = (richiesta.data_arrivo - richiesta.data_partenza).days + 1
@@ -113,7 +127,7 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
         giorni_disponibili=giorni_disponibili
     )
 
-    return tappe_info, verifica, percorso, distanza_massima
+    return tappe_info, verifica, percorso, distanza_massima_effettiva
 
 #endpoint per generare l'itinerario in formato PDF
 @app.post("/genera-itinerario")
@@ -127,6 +141,9 @@ async def genera_itinerario(richiesta: TripRequest):
             "tappe_info": tappe_info,
         }
 
+    # 🔥 FIX: Aggiorniamo la richiesta con la distanza giornaliera effettiva
+    # per far sì che il viaggio si adatti ai giorni disponibili.
+    richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
     # Passiamo l'intera richiesta, che contiene tutte le info necessarie
     itinerario = await costruisci_itinerario(percorso, richiesta)
 
@@ -161,6 +178,9 @@ async def genera_itinerario_pdf(richiesta: TripRequest):
     if not verifica["fattibile"]:
         raise HTTPException(status_code=400, detail=f"Viaggio non fattibile: {verifica['motivo']}")
 
+    # 🔥 FIX: Aggiorniamo la richiesta con la distanza giornaliera effettiva
+    # per far sì che il viaggio si adatti ai giorni disponibili.
+    richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
     # Passiamo l'intera richiesta, che contiene tutte le info necessarie
     itinerario = await costruisci_itinerario(percorso, richiesta)
 
