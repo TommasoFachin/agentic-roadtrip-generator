@@ -18,7 +18,7 @@ def geocoding_citta(nome_citta: str) -> tuple[float, float]:
         "Accept-Language": "it"
     }
 
-    print(f"   > Cerco coordinate per: {nome_citta}...")
+    print(f"   > Cerco coordinate per: {nome_citta}...\n")
 
     # --- 1. PRIMARIO: NOMINATIM (Intelligente con le lingue) ---
     url_nominatim = "https://nominatim.openstreetmap.org/search"

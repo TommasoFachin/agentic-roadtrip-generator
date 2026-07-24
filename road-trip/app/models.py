@@ -16,6 +16,7 @@ class TripRequest(BaseModel):
     tappe_intermedie: Optional[List[str]] = []
     tappe_intermedie_utente: Optional[List[str]] = []
     budget_hotel_cibo: str = "non specificato"
+    is_round_trip: bool = False # Nuovo campo per indicare se il viaggio è di andata e ritorno
 
 
 

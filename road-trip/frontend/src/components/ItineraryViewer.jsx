@@ -13,6 +13,7 @@ const ItineraryViewer = ({ chatMessages }) => {
   const [selectedBudget, setSelectedBudget] = useState("nessuno");
   const [manualStops, setManualStops] = useState([]);
 
+  const [isRoundTrip, setIsRoundTrip] = useState(false); // Nuovo stato per la checkbox A/R
   const loadItinerary = async (requestPayload, stepMessage) => {
     setLoadingStep(stepMessage);
     const plannerResponse = await fetch("http://127.0.0.1:8000/genera-itinerario", {
@@ -67,7 +68,8 @@ const ItineraryViewer = ({ chatMessages }) => {
       const requestWithBudget = {
         ...tripRequest,
         budget_hotel_cibo: selectedBudget,
-        tappe_intermedie_utente: tripRequest.tappe_intermedie_utente || []
+        tappe_intermedie_utente: tripRequest.tappe_intermedie_utente || [],
+        is_round_trip: isRoundTrip, // Includiamo il valore della checkbox
       };
 
       // 3. Chiamata al Planner (Routing, POI, Eventi)
@@ -194,7 +196,22 @@ const ItineraryViewer = ({ chatMessages }) => {
             </button>
           </div>
 
-          <div className="flex space-x-3">
+          {/* Checkbox Andata e Ritorno (Toggle Switch) - Spostato sopra i bottoni */}
+          <div className="mt-8 mb-8 flex items-center justify-center">
+            <label htmlFor="round-trip-checkbox" className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                id="round-trip-checkbox"
+                className="sr-only peer"
+                checked={isRoundTrip}
+                onChange={(e) => setIsRoundTrip(e.target.checked)}
+              />
+              <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              <span className="ml-3 text-sm font-medium text-gray-900">Andata e Ritorno</span>
+            </label>
+          </div>
+
+          <div className="flex space-x-3 mt-4">
             <button
               onClick={() => setShowBudgetForm(false)}
               className="px-6 py-3 rounded-full font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"

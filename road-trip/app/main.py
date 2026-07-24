@@ -90,27 +90,49 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
     coordinate_percorso.append(coord_end)
 
     # Routing: distanza reale + durata
-    percorso = calcola_percorso(coordinate_percorso)
+    percorso_andata = calcola_percorso(coordinate_percorso)
+    percorso_finale = percorso_andata
+
+    giorni_disponibili_utente = (richiesta.data_arrivo - richiesta.data_partenza).days + 1
+
+    # 🔥 NUOVA LOGICA ANDATA/RITORNO
+    if richiesta.is_round_trip:
+        print("INFO: Pianificazione viaggio di andata e ritorno.")
+        # Per il ritorno, invertiamo partenza e destinazione
+        coordinate_percorso_ritorno = [coord_end, coord_start]
+        percorso_ritorno = calcola_percorso(coordinate_percorso_ritorno)
+
+        # Uniamo i due percorsi in un unico viaggio
+        percorso_finale = {
+            "distanza_km": percorso_andata["distanza_km"] + percorso_ritorno["distanza_km"],
+            "durata_sec": percorso_andata["durata_sec"] + percorso_ritorno["durata_sec"],
+            "geometry": percorso_andata["geometry"][:-1] + percorso_ritorno["geometry"],
+            "way_points": percorso_andata["way_points"]
+        }
+        # Dividiamo i giorni a metà, arrotondando per difetto.
+        # L'ultimo giorno del ritorno potrebbe essere più lungo, ma il planner lo gestirà.
+        giorni_disponibili_utente = giorni_disponibili_utente // 2
+        print(f"INFO: Giorni per l'andata e ritorno divisi a metà: {giorni_disponibili_utente} giorni per tratta.")
 
     # --- LOGICA PER ADATTARE IL VIAGGIO ALLA DURATA RICHIESTA ---
     distanza_massima_utente = richiesta.preferenze.distanza_massima_giornaliera
-    giorni_disponibili_utente = (richiesta.data_arrivo - richiesta.data_partenza).days + 1
 
     # Calcoliamo la distanza media giornaliera necessaria per riempire tutti i giorni
     distanza_ideale_giornaliera = 0
-    if giorni_disponibili_utente > 0:
-        distanza_ideale_giornaliera = percorso["distanza_km"] / giorni_disponibili_utente
+    # Usiamo il percorso_finale che può essere solo andata o A/R
+    if giorni_disponibili_utente > 0 and percorso_finale["distanza_km"] > 0:
+        distanza_ideale_giornaliera = percorso_finale["distanza_km"] / giorni_disponibili_utente
 
     # Se la distanza ideale è inferiore al massimo dell'utente, la usiamo per "allungare" il viaggio.
     # Altrimenti, usiamo il massimo dell'utente (il viaggio sarà più breve o non fattibile).
-    if 0 < distanza_ideale_giornaliera < distanza_massima_utente:
+    if distanza_ideale_giornaliera > 0 and distanza_ideale_giornaliera < distanza_massima_utente:
         print(f"INFO: Adatto il viaggio a {giorni_disponibili_utente} giorni. Distanza giornaliera impostata a {int(distanza_ideale_giornaliera)} km.")
         distanza_massima_effettiva = distanza_ideale_giornaliera
     else:
         distanza_massima_effettiva = distanza_massima_utente
 
     # Usiamo la distanza effettiva per il calcolo delle tappe
-    tappe_info = calcola_tappe(percorso["distanza_km"], distanza_massima_effettiva)
+    tappe_info = calcola_tappe(percorso_finale["distanza_km"], distanza_massima_effettiva)
     # ----------------------------------------------------------------
 
     # Calcolo giorni disponibili
@@ -122,12 +144,12 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
         )
 
     # STEP 3.2 — Verifica fattibilità del viaggio
-    verifica = verifica_fattibilita_viaggio(
+    verifica = verifica_fattibilita_viaggio( # type: ignore
         required_days=tappe_info["required_days"],
         giorni_disponibili=giorni_disponibili
     )
 
-    return tappe_info, verifica, percorso, distanza_massima_effettiva
+    return tappe_info, verifica, percorso_finale, distanza_massima_effettiva
 
 #endpoint per generare l'itinerario in formato PDF
 @app.post("/genera-itinerario")
@@ -145,7 +167,12 @@ async def genera_itinerario(richiesta: TripRequest):
     # per far sì che il viaggio si adatti ai giorni disponibili.
     richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
     # Passiamo l'intera richiesta, che contiene tutte le info necessarie
-    itinerario = await costruisci_itinerario(percorso, richiesta)
+    
+    # 🔥 FIX ANDATA/RITORNO: Se è un round trip, passiamo al planner SOLO il percorso di andata.
+    # Il planner userà i giorni dimezzati (calcolati in _prepara_dati_viaggio) sulla tratta di sola andata.
+    percorso_da_usare = _prepara_dati_viaggio(richiesta)[2] if not richiesta.is_round_trip else calcola_percorso([geocoding_citta(richiesta.luogo_partenza)] + [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] + [geocoding_citta(richiesta.luogo_destinazione)])
+
+    itinerario = await costruisci_itinerario(percorso_da_usare, richiesta)
 
     documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
 
@@ -182,7 +209,11 @@ async def genera_itinerario_pdf(richiesta: TripRequest):
     # per far sì che il viaggio si adatti ai giorni disponibili.
     richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
     # Passiamo l'intera richiesta, che contiene tutte le info necessarie
-    itinerario = await costruisci_itinerario(percorso, richiesta)
+    
+    # 🔥 FIX ANDATA/RITORNO: Se è un round trip, passiamo al planner SOLO il percorso di andata.
+    percorso_da_usare = percorso if not richiesta.is_round_trip else calcola_percorso([geocoding_citta(richiesta.luogo_partenza)] + [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] + [geocoding_citta(richiesta.luogo_destinazione)])
+
+    itinerario = await costruisci_itinerario(percorso_da_usare, richiesta)
 
     documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
 

@@ -34,8 +34,9 @@ Devi restituire ESCLUSIVAMENTE un JSON valido che rispetta ESATTAMENTE questo sc
   "preferenze": {
     "distanza_massima_giornaliera": 0,
     "interessi_poi": ["string", "string"....ecc],
-    "interessi_eventi": ["string", "string"....ecc]
-  }
+    "interessi_eventi": ["string", "string"....ecc],
+  },
+  "is_round_trip": false
 }
 
 REGOLE IMPORTANTI:
