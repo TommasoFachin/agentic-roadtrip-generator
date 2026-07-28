@@ -168,9 +168,11 @@ async def genera_itinerario(richiesta: TripRequest):
     richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
     # Passiamo l'intera richiesta, che contiene tutte le info necessarie
     
-    # 🔥 FIX ANDATA/RITORNO: Se è un round trip, passiamo al planner SOLO il percorso di andata.
-    # Il planner userà i giorni dimezzati (calcolati in _prepara_dati_viaggio) sulla tratta di sola andata.
-    percorso_da_usare = _prepara_dati_viaggio(richiesta)[2] if not richiesta.is_round_trip else calcola_percorso([geocoding_citta(richiesta.luogo_partenza)] + [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] + [geocoding_citta(richiesta.luogo_destinazione)])
+    # 🔥 FIX ANDATA/RITORNO: Se è un round trip, il planner deve lavorare SOLO sul percorso di andata.
+    # La distanza totale e i giorni per tratta sono già stati calcolati correttamente in `_prepara_dati_viaggio`.
+    # Qui ci assicuriamo di passare la geometria e i dati del solo viaggio di andata.
+    percorso_andata = calcola_percorso([geocoding_citta(richiesta.luogo_partenza)] + [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] + [geocoding_citta(richiesta.luogo_destinazione)])
+    percorso_da_usare = percorso_andata if richiesta.is_round_trip else percorso
 
     itinerario = await costruisci_itinerario(percorso_da_usare, richiesta)
 

@@ -59,3 +59,7 @@ class UserProfile(BaseModel):
     preferenze_cibo: list[str] = []
     tappe_obbligatorie: list[str] = []
     budget_hotel_cibo: str = "non specificato"
+    luogo_partenza: Optional[str] = None
+    luogo_destinazione: Optional[str] = None
+    data_partenza: Optional[date] = None
+    data_arrivo: Optional[date] = None

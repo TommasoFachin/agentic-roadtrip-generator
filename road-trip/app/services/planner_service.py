@@ -40,8 +40,7 @@ async def cerca_immagine_citta(citta: str) -> str | None:
     async with aiohttp.ClientSession(headers=headers) as session:
 
         # 1️⃣ CERCA LA PAGINA DELLA CITTÀ
-        # Cerchiamo solo il nome della città per evitare che la nazione confonda Wikipedia EN
-        search_term = citta.split(",")[0].strip()
+        search_term = citta # Usa il nome completo della città per una ricerca più precisa
         search_url = "https://en.wikipedia.org/w/api.php"
         search_params = {
             "action": "query",
@@ -88,10 +87,6 @@ async def cerca_immagine_citta(citta: str) -> str | None:
                 if not img:
                     continue
 
-                # 3️⃣ FILTRO ANTI-IMMAGINI SBAGLIATE
-                if any(bad in img.lower() for bad in blacklist):
-                    continue
-
                 return img
 
         except Exception as e:
@@ -131,8 +126,7 @@ async def cerca_immagine_poi_wikipedia(nome_poi: str) -> str | None:
                 data = await resp.json()
 
             results = data.get("query", {}).get("search", [])
-            if not results:
-                return None
+            if not results: return None
 
             titolo = results[0]["title"]
 
@@ -623,6 +617,12 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
                 
                 citta_ordinate = sorted(citta_vicine, key=lambda x: (-x['popolazione'], x['distanza_dal_punto']))
                 
+                # 🔥 FIX ANTI-STALL: Escludi la città da cui stai partendo oggi!
+                # Questo evita che il planner si blocchi sulla stessa città per più giorni.
+                citta_partenza_oggi, _ = reverse_geocoding(lat_start, lon_start)
+                citta_da_inviare = [c for c in citta_ordinate if c.get("nome", "").lower() != citta_partenza_oggi.lower()]
+                if not citta_da_inviare: citta_da_inviare = citta_ordinate # Fallback se rimangono zero città
+
                 # Invia all'LLM solo le prime 20 città più rilevanti
                 citta_da_inviare = citta_ordinate[:20]
                 debug_citta = [f"{c['nome']} ({c['popolazione']} ab.)" for c in citta_da_inviare]
@@ -759,6 +759,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             hotel = risultati_hr.get("hotel", [])
             ristoranti = risultati_hr.get("ristoranti", [])
 
+        # --- LOGICA RICERCA IMMAGINE ---
         immagine_url = None
 
         #  PRIORITÀ: POI iconici → cerca sempre su Wikipedia EN
@@ -772,26 +773,23 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
             if immagine_url:
                 break
 
-        #  PRIORITÀ: immagine del POI da OpenTripMap
+        # Fallback: immagine della città
+        if not immagine_url and citta_tappa:
+            immagine_url = await cerca_immagine_citta(citta_tappa)
+
+        # Fallback: immagine del POI da OpenTripMap
         if not immagine_url:
             for p in poi:
                 img = get_poi_image(p)
                 if img:
                     immagine_url = img
                     break
-
-        if not immagine_url and citta_tappa:
-            nome_pulito = citta_tappa.split(",")[0].strip()
-            nome_en = await traduci_citta_in_inglese(nome_pulito)
-            immagine_url = await cerca_immagine_commons(nome_en)
+        
+        # Fallback finale: immagine di default
         if not immagine_url:
             immagine_url = "https://upload.wikimedia.org/wikipedia/commons/a/a8/Tour_Eiffel_Wikimedia_Commons.jpg"
 
-
-
-
-                
-        # Pausa anti-spam per Groq: 16 secondi per permettere la ricarica dei token ed evitare l'errore 429 (Rate Limit)
+        # Pausa anti-spam per Groq: 10 secondi per permettere la ricarica dei token ed evitare l'errore 429 (Rate Limit)
         await asyncio.sleep(10)
         print(f"   > Giorno {giorno_corrente} completato con successo!")
         print("   > POI scelti:", [p.get("name") for p in poi])
@@ -832,17 +830,10 @@ def calcola_tappe(distanza_km: float, distanza_massima_giornaliera: int) -> dict
     if distanza_massima_giornaliera <= 0:
         return {"error": "distanza_massima_giornaliera non valida", "required_days": 0}
 
-    # 🔥 FIX: Calcolo realistico dei giorni necessari, che simula il comportamento del planner.
-    # Un semplice math.ceil() può sottostimare i giorni quando la distanza dell'ultimo giorno
-    # è molto piccola ma richiede comunque un'iterazione del planner.
-    required_days = 0
-    distanza_rimanente = distanza_km
-    if distanza_rimanente > 0:
-        required_days = 1
-        distanza_rimanente -= distanza_massima_giornaliera
-        while distanza_rimanente > 0:
-            required_days += 1
-            distanza_rimanente -= distanza_massima_giornaliera
+    # Calcolo corretto dei giorni necessari.
+    # Esempio: 901km / 300km/giorno = 3.0033 -> math.ceil -> 4 giorni.
+    # Questo è il modo corretto per calcolare i giorni di viaggio.
+    required_days = math.ceil(distanza_km / distanza_massima_giornaliera)
 
     return {
         "total_distance_km": distanza_km,

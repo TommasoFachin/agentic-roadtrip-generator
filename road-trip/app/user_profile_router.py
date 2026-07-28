@@ -3,6 +3,8 @@ from pydantic import BaseModel
 from app.services.user_profile_service import get_user_profile, update_user_profile
 from app.agent.llm_agent import interpreta_messaggio_chatbot
 from app.agent.llm_agent import genera_risposta_naturale
+import re
+from datetime import datetime
 
 router = APIRouter(prefix="/chatbot", tags=["Chatbot Profilo Utente"])
 
@@ -87,10 +89,35 @@ async def chatbot_messaggio(payload: ChatbotMessage):
                 # Sostituiamo interamente la lista (l'LLM restituisce la lista aggiornata)
                 profilo_dict[campo] = [str(v) for v in valori_raw]
 
+        # 🔥 FIX DI SICUREZZA: Se l'LLM mette le date in preferenze_viaggio, le spostiamo
+        if "preferenze_viaggio" in aggiornamenti:
+            nuove_preferenze = []
+            for pref in profilo_dict.get("preferenze_viaggio", []):
+                # Regex per trovare date nel formato YYYY-MM-DD
+                match_partenza = re.search(r'partenza.*?(\d{4}-\d{2}-\d{2})', pref)
+                match_arrivo = re.search(r'arrivo.*?(\d{4}-\d{2}-\d{2})', pref)
+                if match_partenza and "data_partenza" not in aggiornamenti:
+                    aggiornamenti["data_partenza"] = match_partenza.group(1)
+                elif match_arrivo and "data_arrivo" not in aggiornamenti:
+                    aggiornamenti["data_arrivo"] = match_arrivo.group(1)
+                else:
+                    nuove_preferenze.append(pref)
+            profilo_dict["preferenze_viaggio"] = nuove_preferenze
+
         # AGGIORNAMENTO PER CAMPI STRINGA SINGOLI
         for campo_str in ["luogo_partenza", "luogo_destinazione", "budget_hotel_cibo"]:
             if campo_str in aggiornamenti:
                 profilo_dict[campo_str] = str(aggiornamenti[campo_str])
+
+        # AGGIORNAMENTO PER CAMPI DATA
+        for campo_data in ["data_partenza", "data_arrivo"]:
+            if campo_data in aggiornamenti:
+                try:
+                    # L'LLM dovrebbe restituire la data in formato YYYY-MM-DD
+                    profilo_dict[campo_data] = datetime.strptime(aggiornamenti[campo_data], "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    print(f"ATTENZIONE: Impossibile convertire '{aggiornamenti[campo_data]}' in data per {campo_data}.")
+                    # Se la conversione fallisce, ignora l'aggiornamento per quel campo data
 
         # aggiorna il profilo completo
         profilo = update_user_profile(profilo_dict)

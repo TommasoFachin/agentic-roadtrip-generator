@@ -12,7 +12,7 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from openai import AsyncOpenAI
 from app.models import TripRequest
-from datetime import datetime
+from datetime import datetime, date
 from app.services.geocoding_service import geocoding_citta
 
 # ---------------------------------------------------------
@@ -125,6 +125,8 @@ Usa SOLO queste chiavi per gli aggiornamenti:
    - tappe_obbligatorie (lista di stringhe con i nomi esatti delle città)
    - luogo_partenza (stringa)
    - luogo_destinazione (stringa)
+   - data_partenza (stringa "YYYY-MM-DD")
+   - data_arrivo (stringa "YYYY-MM-DD")
    - budget_hotel_cibo (stringa)
 
 2) Se l'utente chiede di RIMUOVERE un elemento (es. "togli Berlino"), rimuovilo dalla lista corrispondente del Profilo attuale e restituisci la nuova lista in "aggiornamenti".
@@ -240,6 +242,12 @@ async def interpreta_richiesta(testo: str) -> TripRequest:
 # FUNZIONE: interpreta messaggi del chatbot
 # ---------------------------------------------------------
 
+def json_date_serializer(obj):
+    """Serializzatore JSON per oggetti data, che non sono gestiti di default."""
+    if isinstance(obj, date):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
 async def interpreta_messaggio_chatbot(messaggio: str, profilo_attuale: dict) -> dict:
     """
     L'LLM deve:
@@ -248,9 +256,8 @@ async def interpreta_messaggio_chatbot(messaggio: str, profilo_attuale: dict) ->
     Restituisce un dict con chiavi: "aggiornamenti", "risposta".
     """
 
-    prompt = f"""
-Profilo attuale:
-{json.dumps(profilo_attuale, ensure_ascii=False)}
+    prompt = f"""Profilo attuale:
+{json.dumps(profilo_attuale, ensure_ascii=False, default=json_date_serializer)}
 
 Messaggio dell'utente:
 "{messaggio}"

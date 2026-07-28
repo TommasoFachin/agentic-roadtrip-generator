@@ -64,6 +64,16 @@ const ItineraryViewer = ({ chatMessages }) => {
       if (!llmResponse.ok) throw new Error("Errore durante l'interpretazione dei dati.");
       const tripRequest = await llmResponse.json();
 
+      // --- VALIDAZIONE DATI OBBLIGATORI ---
+      const { luogo_partenza, luogo_destinazione, data_partenza, data_arrivo } = tripRequest;
+      if (!luogo_partenza || !luogo_destinazione || !data_partenza || !data_arrivo) {
+        let missing = [];
+        if (!luogo_partenza) missing.push("luogo di partenza");
+        if (!luogo_destinazione) missing.push("destinazione");
+        if (!data_partenza || !data_arrivo) missing.push("le date del viaggio");
+        throw new Error(`Dati insufficienti per pianificare. Per favore, specifica in chat: ${missing.join(', ')}.`);
+      }
+
       // Aggiungiamo la scelta del budget prima di inviare al planner
       const requestWithBudget = {
         ...tripRequest,

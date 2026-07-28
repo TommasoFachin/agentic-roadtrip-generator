@@ -1,1 +1,1 @@
-{"_default": {"1": {"interessi_poi": ["centri di citt\u00e0", "punti di interesse maggiori"], "interessi_eventi": ["musica"], "preferenze_viaggio": [], "preferenze_cibo": [], "tappe_obbligatorie": [], "budget_hotel_cibo": "500"}}}
+{"_default": {"1": {"interessi_poi": ["punti di interesse maggiori"], "interessi_eventi": ["musica"], "preferenze_viaggio": [], "preferenze_cibo": [], "tappe_obbligatorie": [], "budget_hotel_cibo": "500", "luogo_partenza": "Modena", "luogo_destinazione": "Copenaghen", "data_partenza": "2026-08-10", "data_arrivo": "2026-08-20"}}}
