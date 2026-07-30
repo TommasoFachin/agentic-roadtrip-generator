@@ -271,7 +271,6 @@ def get_poi_image(poi: dict) -> str | None:
     return None
 
 def get_population(city_name):
-    # GeoNames non capisce bene le virgole: usiamo solo il nome della città per la ricerca
     nome_pulito = city_name.split(",")[0].strip()
     url = "http://api.geonames.org/searchJSON"
     params = {
@@ -787,7 +786,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
         
         # Fallback finale: immagine di default
         if not immagine_url:
-            immagine_url = "https://upload.wikimedia.org/wikipedia/commons/a/a8/Tour_Eiffel_Wikimedia_Commons.jpg"
+            immagine_url = "https://images.unsplash.com/photo-1500382017468-9049fed747ef" # Immagine generica di un cielo azzurro
 
         # Pausa anti-spam per Groq: 10 secondi per permettere la ricarica dei token ed evitare l'errore 429 (Rate Limit)
         await asyncio.sleep(10)
