@@ -206,8 +206,8 @@ async def interpreta_richiesta(testo: str) -> TripRequest:
     testo_arricchito = f"DATA DI OGGI: {oggi}\nRICHIESTA UTENTE: {testo}"
 
     try:
-        # Aggiunto timeout di 20 secondi
-        result = await asyncio.wait_for(llm_viaggio.run(testo_arricchito), timeout=20.0)
+        # Aumentato il timeout a 45 secondi per evitare errori su reti lente o con API sovraccariche
+        result = await asyncio.wait_for(llm_viaggio.run(testo_arricchito), timeout=45.0)
         # Estraiamo l'output reale gestendo retrocompatibilità (output vs data in pydantic_ai)
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
@@ -233,7 +233,7 @@ async def interpreta_richiesta(testo: str) -> TripRequest:
         data = json.loads(json_text)
         return TripRequest(**data)
     except asyncio.TimeoutError:
-        raise ValueError("Errore: Timeout! Groq ha impiegato più di 20 secondi a rispondere.")
+        raise ValueError("Errore: Timeout! Groq ha impiegato più di 45 secondi a rispondere.")
     except Exception as e:
         print(f"\nErrore nell'agente di viaggio: {type(e).__name__} - {e}")
         raise ValueError("Impossibile estrarre JSON dall'LLM") from e

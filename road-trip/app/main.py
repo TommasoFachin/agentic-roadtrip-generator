@@ -167,14 +167,43 @@ async def genera_itinerario(richiesta: TripRequest):
     # per far sì che il viaggio si adatti ai giorni disponibili.
     richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
     # Passiamo l'intera richiesta, che contiene tutte le info necessarie
-    
-    # 🔥 FIX ANDATA/RITORNO: Se è un round trip, il planner deve lavorare SOLO sul percorso di andata.
-    # La distanza totale e i giorni per tratta sono già stati calcolati correttamente in `_prepara_dati_viaggio`.
-    # Qui ci assicuriamo di passare la geometria e i dati del solo viaggio di andata.
-    percorso_andata = calcola_percorso([geocoding_citta(richiesta.luogo_partenza)] + [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] + [geocoding_citta(richiesta.luogo_destinazione)])
-    percorso_da_usare = percorso_andata if richiesta.is_round_trip else percorso
 
-    itinerario = await costruisci_itinerario(percorso_da_usare, richiesta)
+    if richiesta.is_round_trip:
+        print("INFO: Inizio pianificazione A/R in due fasi.")
+        # --- FASE 1: ANDATA ---
+        print("INFO: Fase 1 - Calcolo percorso di ANDATA.")
+        percorso_andata = calcola_percorso(
+            [geocoding_citta(richiesta.luogo_partenza)] +
+            [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] +
+            [geocoding_citta(richiesta.luogo_destinazione)]
+        )
+        itinerario_andata = await costruisci_itinerario(percorso_andata, richiesta)
+
+        # Raccogliamo le città tappa dell'andata da evitare al ritorno
+        citta_tappe_andata = [g.citta_tappa for g in itinerario_andata.giorni]
+        print(f"INFO: Tappe di andata da evitare al ritorno: {citta_tappe_andata}")
+
+        # --- FASE 2: RITORNO ---
+        print("INFO: Fase 2 - Calcolo percorso di RITORNO.")
+        # Invertiamo partenza e destinazione per il ritorno
+        richiesta_ritorno = richiesta.model_copy(deep=True)
+        richiesta_ritorno.luogo_partenza, richiesta_ritorno.luogo_destinazione = richiesta.luogo_destinazione, richiesta.luogo_partenza
+        richiesta_ritorno.tappe_intermedie_utente = [] # Le tappe utente valgono solo per l'andata
+
+        percorso_ritorno = calcola_percorso(
+            [geocoding_citta(richiesta_ritorno.luogo_partenza), geocoding_citta(richiesta_ritorno.luogo_destinazione)]
+        )
+        
+        # Pianifichiamo il ritorno partendo dal giorno successivo all'ultimo dell'andata
+        giorno_partenza_ritorno = len(itinerario_andata.giorni) + 1
+        itinerario_ritorno = await costruisci_itinerario(percorso_ritorno, richiesta_ritorno, citta_da_evitare=citta_tappe_andata, giorno_partenza=giorno_partenza_ritorno)
+
+        # --- FASE 3: UNIONE ---
+        itinerario_andata.giorni.extend(itinerario_ritorno.giorni)
+        itinerario = itinerario_andata
+    else:
+        # Logica standard per viaggio di sola andata
+        itinerario = await costruisci_itinerario(percorso, richiesta)
 
     documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
 

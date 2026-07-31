@@ -539,7 +539,7 @@ def trova_punto_a_distanza(geometry: list, start_idx: int, distanza_target_km: f
 
     return len(geometry) - 1, geometry[-1]
 # funzione principale che costruisce l'itinerario giorno per giorno, con orari realistici, città di tappa e POI rilevanti lungo la tappa.
-async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripPlan:
+async def costruisci_itinerario(percorso: dict, richiesta: TripRequest, citta_da_evitare: List[str] = None, giorno_partenza: int = 1) -> TripPlan:
     """
     Genera un itinerario giorno per giorno basato su:
       - tappe reali lungo il percorso (distanza massima giornaliera)
@@ -547,6 +547,10 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
       - città/paese della tappa
       - POI rilevanti lungo la tappa (ancorati a città reali)
     """
+    # Normalizziamo le città da evitare per un confronto affidabile
+    citta_evitate_norm = set()
+    if citta_da_evitare:
+        citta_evitate_norm = {c.split(',')[0].strip().lower() for c in citta_da_evitare}
     profilo = get_user_profile()
 
     distanza_totale = percorso["distanza_km"]
@@ -560,7 +564,7 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
 
     giorni = []
     tempo_extra = 0
-    giorno_corrente = 0
+    giorno_corrente = giorno_partenza - 1 # Partiamo dal giorno precedente a quello specificato
 
     # 🔥 Applica il mapping degli interessi PRIMA di cercare i POI
     interessi_mappati = mappa_interessi(richiesta.preferenze.interessi_poi)
@@ -620,7 +624,12 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest) -> TripP
                 # Questo evita che il planner si blocchi sulla stessa città per più giorni.
                 citta_partenza_oggi, _ = reverse_geocoding(lat_start, lon_start)
                 citta_da_inviare = [c for c in citta_ordinate if c.get("nome", "").lower() != citta_partenza_oggi.lower()]
-                if not citta_da_inviare: citta_da_inviare = citta_ordinate # Fallback se rimangono zero città
+                
+                # 🔥 NUOVA LOGICA: Filtra le città da evitare (per il viaggio di ritorno)
+                if citta_evitate_norm:
+                    citta_da_inviare = [c for c in citta_da_inviare if c.get("nome", "").split(',')[0].strip().lower() not in citta_evitate_norm]
+
+                if not citta_da_inviare: citta_da_inviare = citta_ordinate # Fallback se rimangono zero città dopo i filtri
 
                 # Invia all'LLM solo le prime 20 città più rilevanti
                 citta_da_inviare = citta_ordinate[:20]
