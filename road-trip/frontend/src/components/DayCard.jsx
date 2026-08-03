@@ -1,5 +1,3 @@
-import React from 'react';
-
 const DayCard = ({ day }) => {
   return (
     <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-8 border border-gray-100 hover:shadow-xl transition-shadow duration-300">

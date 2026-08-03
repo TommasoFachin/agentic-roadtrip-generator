@@ -9,7 +9,7 @@ from app.services.poi_service import cerca_poi, mappa_interessi, cerca_strutture
 import math
 from app.services.event_service import cerca_eventi
 import requests
-from typing import List, Tuple
+from typing import Any, Awaitable, Callable, List, Tuple
 from app.services.geocoding_service import reverse_geocoding, geocoding_citta
 from app.services.user_profile_service import get_user_profile
 from app.agent.llm_agent import seleziona_poi_con_llm, seleziona_eventi_con_llm, seleziona_citta_tappa_con_llm, seleziona_hotel_ristoranti_con_llm
@@ -539,7 +539,13 @@ def trova_punto_a_distanza(geometry: list, start_idx: int, distanza_target_km: f
 
     return len(geometry) - 1, geometry[-1]
 # funzione principale che costruisce l'itinerario giorno per giorno, con orari realistici, città di tappa e POI rilevanti lungo la tappa.
-async def costruisci_itinerario(percorso: dict, richiesta: TripRequest, citta_da_evitare: List[str] = None, giorno_partenza: int = 1) -> TripPlan:
+async def costruisci_itinerario(
+    percorso: dict,
+    richiesta: TripRequest,
+    citta_da_evitare: List[str] = None,
+    giorno_partenza: int = 1,
+    on_day: Callable[[DayPlan], Awaitable[None] | None] | None = None,
+) -> TripPlan:
     """
     Genera un itinerario giorno per giorno basato su:
       - tappe reali lungo il percorso (distanza massima giornaliera)
@@ -822,6 +828,11 @@ async def costruisci_itinerario(percorso: dict, richiesta: TripRequest, citta_da
         )
 
         giorni.append(giorno)
+
+        if on_day is not None:
+            risultato_callback = on_day(giorno)
+            if asyncio.iscoroutine(risultato_callback):
+                await risultato_callback
 
     return TripPlan(
         distanza_totale_km=round(distanza_totale, 2),

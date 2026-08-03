@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import DayCard from './DayCard';
 import MapComponent from './MapComponent';
 
@@ -22,15 +22,75 @@ const ItineraryViewer = ({ chatMessages }) => {
       body: JSON.stringify(requestPayload)
     });
 
-    const data = await plannerResponse.json();
-
-    if (!plannerResponse.ok || data.errore) {
-      throw new Error(data.errore ? `${data.errore}: ${data.dettagli.motivo}` : "Errore nella generazione dell'itinerario.");
+    if (!plannerResponse.ok || !plannerResponse.body) {
+      throw new Error("Errore nella generazione dell'itinerario.");
     }
 
-    setTripRequest(requestPayload);
-    setItinerary(data.itinerario);
-    return data.itinerario;
+    const reader = plannerResponse.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalItinerary = null;
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            const event = JSON.parse(trimmed);
+
+            if (event.type === "status") {
+              setLoadingStep(event.message);
+            }
+
+            if (event.type === "day" && event.day) {
+              setLoadingStep(`Tappa ${event.day.giorno} generata...`);
+              setItinerary((current) => {
+                const giorniAttuali = current?.giorni || [];
+                return {
+                  ...(current || {}),
+                  giorni: [...giorniAttuali, event.day],
+                };
+              });
+            }
+
+            if (event.type === "error") {
+              throw new Error(event.message || "Errore nella generazione dell'itinerario.");
+            }
+
+            if (event.type === "done") {
+              setLoadingStep("Itinerario completato.");
+              finalItinerary = event.itinerario;
+              setTripRequest(requestPayload);
+              setItinerary(event.itinerario);
+            }
+          }
+        }
+
+        if (done) {
+          break;
+        }
+      }
+    } catch (streamError) {
+      try {
+        await reader.cancel();
+      } catch {
+        // Ignoriamo gli errori di chiusura del reader.
+      }
+      throw streamError;
+    }
+
+    if (!finalItinerary) {
+      throw new Error("Non è stato possibile completare la generazione dell'itinerario.");
+    }
+
+    return finalItinerary;
   };
 
   const startPlanning = () => {
@@ -48,6 +108,7 @@ const ItineraryViewer = ({ chatMessages }) => {
     setError(null);
     setItinerary(null);
     setManualStops([]);
+    setTripRequest(null);
 
     try {
       // 1. Uniamo i messaggi della chat in un unico testo

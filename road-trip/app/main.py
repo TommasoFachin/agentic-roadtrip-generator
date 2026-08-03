@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
 from app.models import TripRequest
 from pydantic import BaseModel
+import asyncio
+import json
 from app.agent.llm_agent import interpreta_richiesta
 from app.services.geocoding_service import geocoding_citta, reverse_geocoding
 from app.services.routing_service import calcola_percorso
@@ -154,79 +156,113 @@ def _prepara_dati_viaggio(richiesta: TripRequest):
 #endpoint per generare l'itinerario in formato PDF
 @app.post("/genera-itinerario")
 async def genera_itinerario(richiesta: TripRequest):
-    tappe_info, verifica, percorso, distanza_massima = await run_in_threadpool(_prepara_dati_viaggio, richiesta)
+    queue: asyncio.Queue[dict | None] = asyncio.Queue()
+    risultato_finale: dict[str, object] = {}
+    errore_finale: dict[str, str] = {}
 
-    if not verifica["fattibile"]:
-        return {
-            "errore": "Viaggio non fattibile",
-            "dettagli": verifica,
-            "tappe_info": tappe_info,
-        }
+    async def manda_evento(evento: dict) -> None:
+        await queue.put(evento)
 
-    # 🔥 FIX: Aggiorniamo la richiesta con la distanza giornaliera effettiva
-    # per far sì che il viaggio si adatti ai giorni disponibili.
-    richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
-    # Passiamo l'intera richiesta, che contiene tutte le info necessarie
+    async def costruisci_e_salva() -> None:
+        try:
+            await manda_evento({"type": "status", "message": "Preparo i dati del viaggio..."})
+            tappe_info, verifica, percorso, distanza_massima = await run_in_threadpool(_prepara_dati_viaggio, richiesta)
 
-    if richiesta.is_round_trip:
-        print("INFO: Inizio pianificazione A/R in due fasi.")
-        # --- FASE 1: ANDATA ---
-        print("INFO: Fase 1 - Calcolo percorso di ANDATA.")
-        percorso_andata = calcola_percorso(
-            [geocoding_citta(richiesta.luogo_partenza)] +
-            [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] +
-            [geocoding_citta(richiesta.luogo_destinazione)]
-        )
-        itinerario_andata = await costruisci_itinerario(percorso_andata, richiesta)
+            if not verifica["fattibile"]:
+                errore_finale["message"] = "Viaggio non fattibile"
+                errore_finale["details"] = json.dumps({
+                    "motivo": verifica.get("motivo"),
+                    "tappe_info": tappe_info,
+                    "verifica": verifica,
+                }, ensure_ascii=False, default=str)
+                return
 
-        # Raccogliamo le città tappa dell'andata da evitare al ritorno
-        citta_tappe_andata = [g.citta_tappa for g in itinerario_andata.giorni]
-        print(f"INFO: Tappe di andata da evitare al ritorno: {citta_tappe_andata}")
+            richiesta.preferenze.distanza_massima_giornaliera = distanza_massima
 
-        # --- FASE 2: RITORNO ---
-        print("INFO: Fase 2 - Calcolo percorso di RITORNO.")
-        # Invertiamo partenza e destinazione per il ritorno
-        richiesta_ritorno = richiesta.model_copy(deep=True)
-        richiesta_ritorno.luogo_partenza, richiesta_ritorno.luogo_destinazione = richiesta.luogo_destinazione, richiesta.luogo_partenza
-        richiesta_ritorno.tappe_intermedie_utente = [] # Le tappe utente valgono solo per l'andata
+            async def on_day(giorno):
+                await manda_evento({"type": "day", "day": giorno.model_dump(mode="json")})
 
-        percorso_ritorno = calcola_percorso(
-            [geocoding_citta(richiesta_ritorno.luogo_partenza), geocoding_citta(richiesta_ritorno.luogo_destinazione)]
-        )
-        
-        # Pianifichiamo il ritorno partendo dal giorno successivo all'ultimo dell'andata
-        giorno_partenza_ritorno = len(itinerario_andata.giorni) + 1
-        itinerario_ritorno = await costruisci_itinerario(percorso_ritorno, richiesta_ritorno, citta_da_evitare=citta_tappe_andata, giorno_partenza=giorno_partenza_ritorno)
+            if richiesta.is_round_trip:
+                await manda_evento({"type": "status", "message": "Pianifico l'andata..."})
+                percorso_andata = calcola_percorso(
+                    [geocoding_citta(richiesta.luogo_partenza)] +
+                    [geocoding_citta(t) for t in richiesta.tappe_intermedie_utente] +
+                    [geocoding_citta(richiesta.luogo_destinazione)]
+                )
+                itinerario_andata = await costruisci_itinerario(percorso_andata, richiesta, on_day=on_day)
 
-        # --- FASE 3: UNIONE ---
-        itinerario_andata.giorni.extend(itinerario_ritorno.giorni)
-        itinerario = itinerario_andata
-    else:
-        # Logica standard per viaggio di sola andata
-        itinerario = await costruisci_itinerario(percorso, richiesta)
+                citta_tappe_andata = [g.citta_tappa for g in itinerario_andata.giorni]
 
-    documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
+                await manda_evento({"type": "status", "message": "Pianifico il ritorno..."})
+                richiesta_ritorno = richiesta.model_copy(deep=True)
+                richiesta_ritorno.luogo_partenza, richiesta_ritorno.luogo_destinazione = richiesta.luogo_destinazione, richiesta.luogo_partenza
+                richiesta_ritorno.tappe_intermedie_utente = []
 
-    # --- GENERAZIONE E SALVATAGGIO PDF LOCALE ---
-    # Questo salva il file nella cartella del progetto ogni volta che chiami l'API
-    pdf_buffer = genera_pdf_itinerario(itinerario, documento)
-    with open("itinerario_generato.pdf", "wb") as f:
-        f.write(pdf_buffer.getvalue())
+                percorso_ritorno = calcola_percorso(
+                    [geocoding_citta(richiesta_ritorno.luogo_partenza), geocoding_citta(richiesta_ritorno.luogo_destinazione)]
+                )
 
-    # --- PULIZIA PROFILO (MANTIENI INTERESSI) ---
-    profilo = get_user_profile()
-    profilo_dict = profilo.model_dump()
-    profilo_dict["tappe_obbligatorie"] = []
-    profilo_dict["preferenze_viaggio"] = []
-    profilo_dict["preferenze_cibo"] = []
-    update_user_profile(profilo_dict)
+                giorno_partenza_ritorno = len(itinerario_andata.giorni) + 1
+                itinerario_ritorno = await costruisci_itinerario(
+                    percorso_ritorno,
+                    richiesta_ritorno,
+                    citta_da_evitare=citta_tappe_andata,
+                    giorno_partenza=giorno_partenza_ritorno,
+                    on_day=on_day,
+                )
 
-    return {
-        "tappe_info": tappe_info,
-        "verifica": verifica,
-        "itinerario": itinerario,
-        "documento": documento
-    }
+                itinerario = itinerario_andata
+                itinerario.giorni.extend(itinerario_ritorno.giorni)
+            else:
+                await manda_evento({"type": "status", "message": "Pianifico il viaggio..."})
+                itinerario = await costruisci_itinerario(percorso, richiesta, on_day=on_day)
+
+            documento = f"Itinerario di {len(itinerario.giorni)} giorni generato con successo."
+
+            pdf_buffer = genera_pdf_itinerario(itinerario, documento)
+            with open("itinerario_generato.pdf", "wb") as f:
+                f.write(pdf_buffer.getvalue())
+
+            profilo = get_user_profile()
+            profilo_dict = profilo.model_dump()
+            profilo_dict["tappe_obbligatorie"] = []
+            profilo_dict["preferenze_viaggio"] = []
+            profilo_dict["preferenze_cibo"] = []
+            update_user_profile(profilo_dict)
+
+            risultato_finale.update({
+                "tappe_info": tappe_info,
+                "verifica": verifica,
+                "itinerario": itinerario.model_dump(mode="json"),
+                "documento": documento,
+            })
+        except Exception as exc:
+            errore_finale["message"] = str(exc)
+        finally:
+            await queue.put(None)
+
+    task = asyncio.create_task(costruisci_e_salva())
+
+    async def event_stream():
+        while True:
+            evento = await queue.get()
+            if evento is None:
+                break
+            yield (json.dumps(evento, ensure_ascii=False, default=str) + "\n").encode("utf-8")
+
+        await task
+
+        if errore_finale:
+            yield (json.dumps({"type": "error", **errore_finale}, ensure_ascii=False, default=str) + "\n").encode("utf-8")
+            return
+
+        yield (json.dumps({"type": "done", **risultato_finale}, ensure_ascii=False, default=str) + "\n").encode("utf-8")
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="application/x-ndjson",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 #endpoint per generare l'itinerario e restituirlo come file PDF scaricabile
 @app.post("/genera-itinerario-pdf")
