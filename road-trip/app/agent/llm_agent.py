@@ -8,7 +8,7 @@ import asyncio
 import os
 from pathlib import Path
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.groq import GroqModel
 from pydantic_ai.providers.ollama import OllamaProvider
 from openai import AsyncOpenAI
 from app.models import TripRequest
@@ -89,10 +89,67 @@ if not chiave_groq or not chiave_groq.startswith("gsk_"):
 
 os.environ["OPENAI_API_KEY"] = chiave_groq
 os.environ["OPENAI_BASE_URL"] = "https://api.groq.com/openai/v1"
+os.environ["GROQ_API_KEY"] = chiave_groq
 
-model = OpenAIChatModel(
-    model_name="llama-3.1-8b-instant"
-)
+MODEL_PREFERENCES = [
+    os.getenv("GROQ_MODEL_NAME"),
+    "llama-3.3-70b-versatile",
+    "llama-3.3-8b-instant",
+]
+
+_groq_available_models: list[str] | None = None
+
+
+def _is_model_unavailable_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "model_not_found",
+            "model_decommissioned",
+            "does not exist or you do not have access",
+            "has been decommissioned",
+            "status_code: 404",
+            "status_code: 400",
+        )
+    )
+
+
+async def _get_available_groq_models() -> list[str]:
+    global _groq_available_models
+    if _groq_available_models is not None:
+        return _groq_available_models
+
+    client = AsyncOpenAI(api_key=chiave_groq, base_url="https://api.groq.com/openai/v1")
+    resp = await client.models.list()
+    _groq_available_models = [m.id for m in resp.data if getattr(m, "id", None)]
+    return _groq_available_models
+
+
+async def _run_with_groq_model(instructions: str, prompt: str, timeout: float, preferred: str | None = None):
+    available_models = await _get_available_groq_models()
+
+    ordered_candidates = []
+    for name in [preferred, *MODEL_PREFERENCES, *available_models]:
+        if name and name not in ordered_candidates:
+            ordered_candidates.append(name)
+
+    last_error = None
+    for model_name in ordered_candidates:
+        try:
+            agent = Agent(model=GroqModel(model_name=model_name), instructions=instructions)
+            return await asyncio.wait_for(agent.run(prompt), timeout=timeout)
+        except Exception as exc:
+            last_error = exc
+            if not _is_model_unavailable_error(exc):
+                raise
+
+    if last_error:
+        raise last_error
+    raise RuntimeError("Nessun modello Groq disponibile per questo account.")
+
+
+model = GroqModel(model_name=(MODEL_PREFERENCES[0] or "llama-3.3-8b-instant"))
 
 llm_viaggio = Agent(
     model=model,
@@ -170,8 +227,8 @@ Regole:
 """
 
 # MODELLO VELOCE SOLO PER LE RISPOSTE
-model_risposta = OpenAIChatModel(
-    model_name="llama-3.1-8b-instant"
+model_risposta = GroqModel(
+    model_name="llama-3.3-8b-instant"
 )
 
 llm_risposta = Agent(
@@ -183,7 +240,12 @@ async def genera_risposta_naturale(messaggio: str) -> str:
     print("   > Generazione risposta naturale LLM in corso...")
     try:
         # Aumentato timeout a 15 secondi per reti lente
-        result = await asyncio.wait_for(llm_risposta.run(messaggio), timeout=15.0)
+        result = await _run_with_groq_model(
+            instructions=PROMPT_RISPOSTA,
+            prompt=messaggio,
+            timeout=15.0,
+            preferred="llama-3.3-8b-instant",
+        )
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         risposta = str(raw_output).strip()
 
@@ -207,7 +269,12 @@ async def interpreta_richiesta(testo: str) -> TripRequest:
 
     try:
         # Aumentato il timeout a 45 secondi per evitare errori su reti lente o con API sovraccariche
-        result = await asyncio.wait_for(llm_viaggio.run(testo_arricchito), timeout=45.0)
+        result = await _run_with_groq_model(
+            instructions=PROMPT_VIAGGIO,
+            prompt=testo_arricchito,
+            timeout=45.0,
+            preferred="llama-3.3-70b-versatile",
+        )
         # Estraiamo l'output reale gestendo retrocompatibilità (output vs data in pydantic_ai)
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
@@ -266,7 +333,12 @@ Messaggio dell'utente:
     print("   > Analisi messaggio Chatbot tramite LLM in corso...")
     try:
         # Aggiunto timeout di 15 secondi
-        result = await asyncio.wait_for(llm_chatbot.run(prompt), timeout=15.0)
+        result = await _run_with_groq_model(
+            instructions=PROMPT_CHATBOT,
+            prompt=prompt,
+            timeout=15.0,
+            preferred="llama-3.3-70b-versatile",
+        )
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
 
@@ -454,7 +526,12 @@ Rispondi SOLO con JSON valido.
 """
 
     try:
-        result = await asyncio.wait_for(llm_eventi.run(prompt), timeout=20.0)
+        result = await _run_with_groq_model(
+            instructions=PROMPT_EVENTI,
+            prompt=prompt,
+            timeout=20.0,
+            preferred="llama-3.3-70b-versatile",
+        )
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
 
@@ -538,7 +615,12 @@ Rispondi SOLO con JSON valido:
 
 
     try:
-        result = await asyncio.wait_for(llm_poi.run(prompt), timeout=30.0)
+        result = await _run_with_groq_model(
+            instructions=PROMPT_POI_PRO,
+            prompt=prompt,
+            timeout=30.0,
+            preferred="llama-3.3-70b-versatile",
+        )
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
 
@@ -652,7 +734,12 @@ async def seleziona_citta_tappa_con_llm(citta_list: list, interessi: list) -> st
     prompt = f"Interessi utente: {interessi}\nLista città disponibili:\n{json.dumps(citta_compilate, ensure_ascii=False)}\nSeleziona la migliore città. Rispondi SOLO in JSON."
     
     try:
-        result = await asyncio.wait_for(llm_citta_tappa.run(prompt), timeout=15.0)
+        result = await _run_with_groq_model(
+            instructions=PROMPT_CITTA_TAPPA,
+            prompt=prompt,
+            timeout=15.0,
+            preferred="llama-3.3-70b-versatile",
+        )
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
 
@@ -727,7 +814,12 @@ async def seleziona_hotel_ristoranti_con_llm(lista_hotel: list, lista_ristoranti
     prompt = f"Città: {citta_tappa}\nBudget: {budget}\nHotel:\n{json.dumps(hotel_compatti, ensure_ascii=False)}\nRistoranti:\n{json.dumps(ristoranti_compatti, ensure_ascii=False)}"
 
     try:
-        result = await asyncio.wait_for(llm_hotel_cibo.run(prompt), timeout=25.0)
+        result = await _run_with_groq_model(
+            instructions=PROMPT_HOTEL_CIBO,
+            prompt=prompt,
+            timeout=25.0,
+            preferred="llama-3.3-70b-versatile",
+        )
         raw_output = getattr(result, 'data', getattr(result, 'output', ''))
         json_text = str(raw_output).strip()
 
